@@ -11,8 +11,10 @@ Pure HTML, CSS and vanilla JavaScript. No framework, no bundler and no npm build
 - Live latest-release panel powered by the public GitHub API
 - Smart download matcher for modded HyperOS / AOSP and KowSU + SuSFS / clean KernelSU / No Root
 - Live changelog from GitHub releases, with verified static fallback entries
-- On-site community: Google/GitHub sign-in, public reviews, private bug reports and general chat
+- Separate Telegram-style community at `community.html`: public General / Releases / Off-topic channels, server-validated message forwarding and a private Bug Hunting desk
+- Google/GitHub sign-in for reviews and channel chat, with private bug reports visible only to their author and staff
 - Public community profiles, report buttons, posting-only bans, configurable slow mode and an aggregate community pulse
+- Floating liquid-glass bottom dock for the kernel site and community, plus an account-aware settings sheet
 - Noindex owner/admin console at `admin.html` for reports, content removal, bans, private bug reports, staff management, settings and the moderation audit log
 - Privacy-first analytics: anonymous visitor IDs, daily server-side hashes and aggregate counts only — no IP addresses, emails or third-party trackers
 - Graceful GitHub fallback: reviews and bug reports become prefilled issues, and chat points to Telegram / Discussions. GitHub has a prefilled-issue URL limit, so an unusually long bug report opens a shortened issue and copies the complete report to the clipboard for pasting
@@ -113,8 +115,10 @@ Create a free Supabase project, then open **SQL Editor** and run these files in 
 2. [`supabase/migrations/20261125_community_moderation.sql`](supabase/migrations/20261125_community_moderation.sql) — profiles, roles, reports, bans, audit log, slow-mode settings, public stats and owner analytics.
 3. [`supabase/migrations/20261125_fix_track_visit_digest.sql`](supabase/migrations/20261125_fix_track_visit_digest.sql) — uses the `extensions.digest` function on hosted Supabase projects.
 4. [`supabase/migrations/20261125_fix_admin_delete_audit.sql`](supabase/migrations/20261125_fix_admin_delete_audit.sql) — makes the admin-removal audit path DELETE-safe.
+5. [`supabase/migrations/20261125_community_channels_forwarding.sql`](supabase/migrations/20261125_community_channels_forwarding.sql) — adds `chat_messages.channel`, forwarding metadata, the forwarding RPC, channel totals and the public member directory.
+6. [`supabase/migrations/20261125_fix_fill_community_author_channels.sql`](supabase/migrations/20261125_fix_fill_community_author_channels.sql) — restores profile-backed author metadata while preserving channels and forwarding.
 
-The migration creates:
+The migrations create:
 
 - `public.community_profiles` — one public profile per auth user, with a unique case-insensitive username
 - `public.community_admins` — owner/admin allowlist; the base table is upgraded with a `role` column
@@ -123,7 +127,8 @@ The migration creates:
 - `public.community_moderation_log` — append-only audit trail
 - `public.community_settings` — live rate limits and chat slow mode
 - `public.site_visits` and `public.community_login_events` — privacy-preserving aggregate analytics
-- RPCs for profiles, roles, heartbeat, visits, reports, bans, public stats and owner stats
+- `public.chat_messages` channel and forwarding columns — public channels are `general`, `releases` and `off-topic`; `bugs` is never a public chat channel
+- RPCs for profiles, roles, heartbeat, visits, reports, bans, forwarding, public channel totals, public members, public stats and owner stats
 
 Run the migration only once. It is written to be safe when applied to the base schema.
 
@@ -176,7 +181,7 @@ community: {
 
 Local token files, `.env` files, private keys and credential JSON files are ignored by `.gitignore`. Do not commit a GitHub token or any Supabase secret. This site only needs the public anon/publishable key.
 
-After redeploying, the header account button appears, the chat shell replaces the fallback, and reviews start using the on-site wall.
+After redeploying, the header account button appears, the separate garage opens from the header/dock, the homepage shows a live channel preview, and reviews start using the on-site wall.
 
 ### 5. Assign the owner
 
@@ -214,23 +219,28 @@ Only the owner can add/remove admins or change settings. The owner account canno
 | Feature | Signed out | Signed in | GitHub fallback |
 | --- | --- | --- | --- |
 | Reviews | Read only; prompted to sign in | Public review, instant publish | Prefilled GitHub issue |
-| Bug reports | No access; sign-in required to report | Private report to developer/admins | Prefilled GitHub issue (public) |
-| General chat | Read only; sign-in gate | Public chat messages, 8-second polling | Telegram / Discussions cards |
+| Bug hunting | Private desk; sign-in required | Only your own private reports, with a new-report form | Prefilled GitHub issue (public) |
+| Public channels | Read only; sign-in gate | General / Releases / Off-topic chat, 6.5-second polling | Telegram / Discussions cards |
+| Forwarding | — | Forward public messages between public channels | Not available |
 | Reports | Sign-in required | Private report, limited per day | Not available |
 | Account | Header sign-in button | Public profile, provider badge and sign-out | Hidden |
 | Moderation | — | Owner/admin console at `admin.html` | — |
+
+The Garage is a single mobile-first page with a desktop channel rail, mobile channel tabs and a members/rules drawer. `General`, `Releases` and `Off-topic` are public channels; `Bug Hunting` is a private, read-only support area that lists only the signed-in user's own reports and never accepts public messages. Staff read all private reports in `admin.html`.
+
+Forwarding is server-owned. `community_forward_message` verifies that the source and target are public chat channels, then writes the original author/channel attribution in the same transaction. Client inserts cannot forge `forwarded_from_*` metadata.
 
 Auth uses Supabase’s OAuth redirect flow. The access token is refreshed in the browser and the session is stored in `localStorage` under `extreme_plus_auth_v1`. The site never sees a password. OAuth callbacks must match a short-lived local sign-in state, so unsolicited tokens in a URL are rejected before a session is stored.
 
 RLS rules:
 
-- Reviews and chat are publicly readable; inserts require `auth.uid() = user_id`.
-- Bug reports are readable only by their author or a community admin.
-- Author names, avatars and providers come from `auth.users`; timestamps and new bug status are set by a trigger, not trusted from the browser. New bug reports are forced to `open`.
+- Public channels and reviews are publicly readable; inserts require `auth.uid() = user_id`. Channel writes are limited to `general`, `releases` and `off-topic`.
+- Bug reports are readable only by their author or community staff. The `Bug Hunting` UI filters to the signed-in user's reports; staff use the admin console.
+- Author names, usernames, avatars and providers come from `public.community_profiles`; timestamps, channels, bug status and forwarding attribution are set by triggers/RPCs, not trusted from the browser. New bug reports are forced to `open`.
 - Reports are readable by the reporter and admins. Bans and the audit log are admin-only.
-- Profile reads happen through the `community_get_profile` RPC; direct table reads are admin-only.
+- Profile reads happen through the `community_get_profile` RPC; direct table reads are admin-only. The public member directory uses `community_public_members`, which never returns email addresses or user IDs.
 - Posting bans block new reviews, chat messages, bug reports and reports. Banned members can still sign in and read.
-- Users cannot update or delete content from the browser. Moderation goes through the owner/admin console or the Supabase dashboard.
+- Authors can delete their own chat messages. Reviews, bug reports and other content are removed through the owner/admin console or the Supabase dashboard.
 
 ### Profiles, analytics and privacy
 
@@ -238,7 +248,7 @@ RLS rules:
 - Profiles show display name, bio, provider, join date, online state and the latest public reviews/chat. There are no avatar uploads; the site downsizes OAuth provider avatars and falls back to initials.
 - Online means a profile heartbeat in the last 15 minutes. The page sends a heartbeat every 60 seconds while visible.
 - Visits use a random `localStorage` visitor ID. The database stores a SHA-256 hash scoped to the current day, deduplicates the same path for 30 minutes, and never stores an IP address.
-- Public stats show aggregate members, online now, visits, sign-ins, reviews and chat counts. Daily/weekly detail and top paths are owner-only.
+- Public stats show aggregate members, online now, visits, sign-ins, reviews, per-channel chat/message totals and public member cards. Daily/weekly detail and top paths are owner-only.
 - The owner console is `noindex`; profile pages are `noindex` too because they contain user-generated content.
 - New accounts are not blocked and there is no CAPTCHA. Abuse control is OAuth, server-side rate limits, reporting, posting bans and audit history.
 
@@ -340,9 +350,9 @@ Release notes support lightweight Markdown-style lines. The changelog renderer t
 
 ## Service worker and caching
 
-`sw.js` pre-caches the shell, fonts, icons, CSS and JS, including the profile and admin pages. Navigations are network-first with a per-URL cache and an offline fallback; static assets are stale-while-revalidate.
+`sw.js` pre-caches the shell, fonts, icons, CSS and JS, including the community, profile and admin pages. Navigations are network-first with a per-URL cache and an offline fallback; static assets are stale-while-revalidate.
 
-After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v4` → `v5`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v5`.
+After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v5` → `v6`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v6`.
 
 GitHub and Supabase API requests are cross-origin and intentionally never cached by the service worker. The app’s own GitHub `localStorage` cache is separate.
 
@@ -362,6 +372,7 @@ GitHub and Supabase API requests are cross-origin and intentionally never cached
 - **Technical type:** JetBrains Mono variable
 - **Palette:** carbon black, M-sport cyan `#3cdcff`, blue `#4678ff`, violet `#b06cff`, red `#ff3e63`
 - **Effects:** glass panels, gradient text, scroll reveals, spotlight hover, hero tilt, particle canvas
+- **Liquid glass:** layered specular rims, refraction gradients, blur and a pointer-follow dock highlight; CSS-only with reduced-motion/responsive fallbacks
 
 All main tokens live at the top of `assets/css/style.css` under `:root` and `html[data-theme="light"]`. Fonts are self-hosted in `assets/fonts/`; there are no third-party UI libraries or tracking scripts. All three font families are licensed under the SIL Open Font License 1.1 — see `assets/fonts/LICENSE.txt`.
 
@@ -370,6 +381,7 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
 ```text
 .
 ├── index.html
+├── community.html
 ├── profile.html
 ├── admin.html
 ├── site.webmanifest
@@ -385,10 +397,14 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
 │   └── migrations
 │       ├── 20261125_community_moderation.sql
 │       ├── 20261125_fix_track_visit_digest.sql
-│       └── 20261125_fix_admin_delete_audit.sql
+│       ├── 20261125_fix_admin_delete_audit.sql
+│       ├── 20261125_community_channels_forwarding.sql
+│       └── 20261125_fix_fill_community_author_channels.sql
 └── assets
     ├── css
     │   ├── style.css
+    │   ├── community.css
+    │   ├── liquid-glass.css
     │   ├── profile.css
     │   └── admin.css
     ├── data/reviews.js
@@ -408,6 +424,8 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
     └── js
         ├── app.js
         ├── community-client.js
+        ├── community.js
+        ├── site-dock.js
         ├── profile.js
         ├── admin.js
         └── config.js

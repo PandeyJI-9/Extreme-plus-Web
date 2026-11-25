@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js" data-community="supabase">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#06070b" id="themeColorMeta">
+  <title>The Garage — EXTREME++ Community</title>
+  <meta name="description" content="The official EXTREME++ garage. Public chat for builds, releases and off-topic talk, plus a private bug desk visible only to you and the maintainer.">
+  <meta name="robots" content="index, follow">
+  <link rel="canonical" href="https://pandeyji-9.github.io/Extreme-plus-Web/community.html">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="PROJECT EXTREME++">
+  <meta property="og:url" content="https://pandeyji-9.github.io/Extreme-plus-Web/community.html">
+  <meta property="og:title" content="The Garage — EXTREME++ Community">
+  <meta property="og:description" content="Four channels, one garage. Public build talk, stable release notes, off-topic banter and a private bug desk.">
+  <meta property="og:image" content="https://pandeyji-9.github.io/Extreme-plus-Web/assets/img/og-image.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="The Garage — EXTREME++ Community">
+  <meta name="twitter:description" content="Public build talk, stable release notes, off-topic banter and a private bug desk.">
+  <meta name="twitter:image" content="https://pandeyji-9.github.io/Extreme-plus-Web/assets/img/og-image.png">
+  <link rel="icon" href="./assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/img/app-icon-180.png">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="preload" href="./assets/fonts/anton-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/jetbrains-mono-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      root.classList.remove("no-js");
+      root.classList.add("js");
+      var theme = "dark";
+      try {
+        var stored = window.localStorage.getItem("extreme_plus_theme");
+        if (stored === "light" || stored === "dark") theme = stored;
+        else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+      } catch (error) {}
+      root.setAttribute("data-theme", theme);
+      root.style.colorScheme = theme;
+      var meta = document.getElementById("themeColorMeta");
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f3f5fa" : "#06070b");
+    })();
+  </script>
+  <link rel="stylesheet" href="./assets/css/style.css">
+  <link rel="stylesheet" href="./assets/css/liquid-glass.css">
+  <link rel="stylesheet" href="./assets/css/community.css">
+</head>
+<body class="community-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-grain" aria-hidden="true"></div>
+
+  <div class="community-ambient" aria-hidden="true">
+    <span class="community-orb community-orb--cyan"></span>
+    <span class="community-orb community-orb--blue"></span>
+    <span class="community-orb community-orb--violet"></span>
+    <span class="community-grid"></span>
+  </div>
+
+  <header class="community-header">
+    <div class="community-header-inner">
+      <a class="community-brand" href="./" aria-label="PROJECT EXTREME++ home">
+        <span class="community-brand-mark" aria-hidden="true">EX<span>++</span></span>
+        <span class="community-brand-copy">
+          <strong>EXTREME<span>++</span></strong>
+          <small>THE GARAGE</small>
+        </span>
+      </a>
+
+      <div class="community-header-center" aria-label="Community activity">
+        <span class="community-live"><i aria-hidden="true"></i> <span data-online-count>—</span> online</span>
+        <span class="community-header-divider" aria-hidden="true"></span>
+        <span><span data-member-count>—</span> members</span>
+        <span class="community-header-divider" aria-hidden="true"></span>
+        <span class="community-header-build">Build #133 stable</span>
+      </div>
+
+      <div class="community-header-actions">
+        <a class="community-kernel-link" href="./">
+          <span>Kernel</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </a>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false" title="Switch to light mode">
+          <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.2 15.1A8.3 8.3 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="community-account" id="communityAccount" type="button" data-community-auth>
+          <span class="community-account-avatar" data-community-avatar aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.2" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
+          <span class="community-account-copy">
+            <small data-community-account-hint>Community</small>
+            <strong data-community-account-label>Sign in</strong>
+          </span>
+        </button>
+        <button class="community-icon-btn" id="communitySettingsBtn" type="button" data-open-settings aria-label="Open settings" title="Settings">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="17" r="2.2" stroke="currentColor" stroke-width="1.7"/></svg>
+        </button>
+        <button class="community-icon-btn community-members-toggle" id="communityMembersToggle" type="button" aria-label="Open members and rules" aria-expanded="false" aria-controls="membersPanel">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3.2 3.2 0 0 1 0 6.2M17 14.5a5.5 5.5 0 0 1 3.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="community-mobile-tabs" role="tablist" aria-label="Community channels">
+    <button class="community-mobile-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="communityStage" data-channel-link="general"><span aria-hidden="true">#</span> General</button>
+    <button class="community-mobile-tab" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="releases"><span aria-hidden="true">#</span> Releases</button>
+    <button class="community-mobile-tab community-mobile-tab--private" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="bugs"><span aria-hidden="true">▣</span> Bug hunting</button>
+    <button class="community-mobile-tab" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="off-topic"><span aria-hidden="true">#</span> Off-topic</button>
+  </div>
+
+  <main class="community-shell" id="main" tabindex="-1">
+    <aside class="community-rail liquid-glass" aria-label="Community channels">
+      <div class="rail-server">
+        <span class="rail-server-icon" aria-hidden="true">EX<span>++</span></span>
+        <span class="rail-server-copy">
+          <strong>EXTREME++ GARAGE</strong>
+          <small>Official community</small>
+        </span>
+        <span class="rail-verified" aria-label="Official">✓</span>
+      </div>
+
+      <span class="rail-label">CHANNELS</span>
+      <nav class="rail-channels" aria-label="Chat channels">
+        <button class="rail-channel is-active" type="button" data-channel-link="general" aria-current="page">
+          <span class="rail-channel-icon" aria-hidden="true">#</span>
+          <span class="rail-channel-copy"><strong>General</strong><small>Daily garage talk</small></span>
+          <span class="rail-channel-count" data-channel-count="general">—</span>
+        </button>
+        <button class="rail-channel" type="button" data-channel-link="releases">
+          <span class="rail-channel-icon" aria-hidden="true">#</span>
+          <span class="rail-channel-copy"><strong>Releases</strong><small>Stable builds only</small></span>
+          <span class="rail-channel-count" data-channel-count="releases">—</span>
+        </button>
+        <button class="rail-channel rail-channel--private" type="button" data-channel-link="bugs">
+          <span class="rail-channel-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V8a4 4 0 0 1 8 0v2M12 14v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
+          <span class="rail-channel-copy"><strong>Bug hunting</strong><small>Private reports</small></span>
+          <span class="rail-lock">LOCKED</span>
+        </button>
+        <button class="rail-channel" type="button" data-channel-link="off-topic">
+          <span class="rail-channel-icon" aria-hidden="true">#</span>
+          <span class="rail-channel-copy"><strong>Off-topic</strong><small>Everything else</small></span>
+          <span class="rail-channel-count" data-channel-count="off-topic">—</span>
+        </button>
+      </nav>
+
+      <div class="rail-pulse">
+        <span class="rail-pulse-label">GARAGE PULSE</span>
+        <div class="rail-pulse-grid">
+          <div><span data-stat="members">—</span><small>Members</small></div>
+          <div><span data-stat="online">—</span><small>Online</small></div>
+          <div><span data-stat="chat">—</span><small>Messages</small></div>
+        </div>
+      </div>
+
+      <div class="rail-footer">
+        <a class="rail-link" href="./#reviews">Reviews <span aria-hidden="true">↗</span></a>
+        <a class="rail-link" href="https://t.me/Extremeplus_Support" target="_blank" rel="noopener noreferrer">Telegram backup <span aria-hidden="true">↗</span></a>
+        <a class="rail-link" href="./profile.html" data-community-profile hidden>My profile <span aria-hidden="true">→</span></a>
+      </div>
+    </aside>
+
+    <section class="community-stage" id="communityStage" role="tabpanel" aria-labelledby="channelTitle" tabindex="-1">
+      <section class="community-chat-panel liquid-glass" id="chatPanel" aria-label="Channel chat">
+        <header class="channel-header">
+          <div class="channel-header-main">
+            <span class="channel-hash" id="channelHash" aria-hidden="true">#</span>
+            <div class="channel-title-copy">
+              <span class="channel-kicker" id="channelKicker">PUBLIC CHANNEL</span>
+              <h1 id="channelTitle">General</h1>
+              <p id="channelTopic">Daily garage talk, build logs and quick questions.</p>
+            </div>
+          </div>
+          <div class="channel-header-meta">
+            <span class="channel-status" id="chatStatus">Connecting…</span>
+            <span class="channel-online"><i aria-hidden="true"></i> <span data-online-count>—</span> online</span>
+            <button class="channel-members-btn" type="button" data-members-toggle aria-expanded="false" aria-controls="membersPanel">
+              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.1" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3.2 3.2 0 0 1 0 6.2M17 14.5a5.5 5.5 0 0 1 3.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+              <span>Members</span>
+            </button>
+          </div>
+        </header>
+
+        <div class="channel-pinned" id="channelPinned" hidden>
+          <span class="pinned-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="m9 4 6 6-2 2 3 3-1 1-3-3-2 2-6-6 5-5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="m8 16-3 3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+          </span>
+          <span class="pinned-copy">
+            <small>PINNED · LATEST STABLE</small>
+            <strong data-pinned-build>Build #133 — Official Stable</strong>
+            <span>Only stable, matching ROM/root builds are listed. Prereleases stay out of the garage.</span>
+          </span>
+          <a class="pinned-link" href="https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/releases/latest" target="_blank" rel="noopener noreferrer">Download <span aria-hidden="true">↗</span></a>
+        </div>
+
+        <span class="sr-only" id="chatAnnouncements" role="status" aria-live="polite"></span>
+        <div class="chat-scroll" id="chatBody" aria-busy="true">
+          <div class="chat-loading" aria-hidden="true">
+            <span class="skeleton-line skeleton-line--short"></span>
+            <span class="skeleton-line"></span>
+            <span class="skeleton-line skeleton-line--medium"></span>
+          </div>
+        </div>
+
+        <div class="garage-auth-gate" id="chatAuthGate" hidden>
+          <div class="auth-gate-card">
+            <span class="auth-gate-mark" aria-hidden="true">EX<span>++</span></span>
+            <div class="auth-gate-copy">
+              <strong>Sign in to join the garage.</strong>
+              <p>Google or GitHub. Public channels are readable by everyone; posting needs an account.</p>
+            </div>
+            <div class="auth-gate-actions">
+              <button class="auth-chip auth-chip--google" type="button" data-oauth-provider="google">Google</button>
+              <button class="auth-chip auth-chip--github" type="button" data-oauth-provider="github">GitHub</button>
+            </div>
+          </div>
+        </div>
+
+        <form class="chat-composer" id="chatForm" novalidate hidden>
+          <div class="composer-shell">
+            <label class="sr-only" for="chatInput">Write a message to this channel</label>
+            <textarea id="chatInput" name="message" rows="1" maxlength="500" placeholder="Write to #General…" required></textarea>
+            <div class="composer-foot">
+              <span class="composer-hint"><span id="chatCharCount">0</span> / 500 · Enter to send · Shift + Enter for a new line</span>
+              <button class="composer-send" id="chatSend" type="submit">
+                <span>Send</span>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m4 12 16-7-7 16-2.5-6.5L4 12Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+          </div>
+          <p class="composer-note" id="chatSlowNote">Public messages. Be useful, be honest, be kind.</p>
+        </form>
+      </section>
+
+      <section class="bug-desk" id="bugDesk" aria-label="Private bug desk" hidden>
+        <header class="bug-desk-hero liquid-glass">
+          <span class="bug-desk-lock" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V8a4 4 0 0 1 8 0v2M12 14v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          </span>
+          <div class="bug-desk-copy">
+            <span class="section-kicker">Private channel</span>
+            <h1>Bug hunting</h1>
+            <p>No public messages here. Your report is visible only to you and the maintainer. Staff can read it in the moderation console.</p>
+          </div>
+          <button class="button button--primary" type="button" data-open-bug>Submit private report <span class="button-arrow" aria-hidden="true">→</span></button>
+        </header>
+
+        <div class="bug-desk-gate liquid-glass" id="bugDeskGate" hidden>
+          <div>
+            <strong>Sign in to open your private bug desk.</strong>
+            <p>Reports include ROM, build, root flavor and logs. Nobody else in the community can read them.</p>
+          </div>
+          <div class="auth-gate-actions">
+            <button class="auth-chip auth-chip--google" type="button" data-oauth-provider="google">Google</button>
+            <button class="auth-chip auth-chip--github" type="button" data-oauth-provider="github">GitHub</button>
+          </div>
+        </div>
+
+        <div class="bug-desk-list" id="bugDeskList" aria-busy="false"></div>
+        <p class="bug-desk-note">Bug reports never appear in public channels. Only aggregate counts are public.</p>
+      </section>
+    </section>
+
+    <aside class="community-members liquid-glass" id="membersPanel" aria-label="Members and house rules">
+      <div class="members-head">
+        <div>
+          <span class="section-kicker">In the garage</span>
+          <h2>Members</h2>
+        </div>
+        <button class="members-close" type="button" data-members-close aria-label="Close members panel">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="members-pulse">
+        <div><span data-stat="online">—</span><small>Online now</small></div>
+        <div><span data-stat="members">—</span><small>Members</small></div>
+      </div>
+      <div class="members-list" id="membersList" aria-label="Community members">
+        <p class="members-empty">Loading riders…</p>
+      </div>
+      <div class="members-rules">
+        <span class="section-kicker">House rules</span>
+        <ul>
+          <li>Include ROM, build, root flavor and logs in bug reports.</li>
+          <li>Modded HyperOS, ColorOS ports or AOSP only. Stock HyperOS is out of scope.</li>
+          <li>No spam, leaks, personal attacks or fake reports.</li>
+          <li>Bug hunting is private. Do not ask for someone else's report.</li>
+        </ul>
+      </div>
+      <div class="members-links">
+        <a href="./#reviews">Review wall <span aria-hidden="true">↗</span></a>
+        <a href="https://t.me/Extremeplus_Support" target="_blank" rel="noopener noreferrer">Telegram <span aria-hidden="true">↗</span></a>
+        <a href="./admin.html" data-community-admin hidden>Moderation console <span aria-hidden="true">↗</span></a>
+      </div>
+    </aside>
+  </main>
+
+  <div class="members-scrim" id="membersScrim" hidden></div>
+
+  <dialog class="review-dialog community-dialog" id="communityAuthDialog" aria-labelledby="communityAuthTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="communityAuthClose" type="button" aria-label="Close sign-in dialog">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Community access</span>
+      <h2 id="communityAuthTitle">Join the <span class="text-gradient">garage.</span></h2>
+      <p class="dialog-lede">Use Google or GitHub to post in public channels and open your private bug desk. We only receive your public profile name, avatar and email.</p>
+
+      <div class="community-auth-providers" data-community-signed-out>
+        <button class="auth-provider auth-provider--google" type="button" data-oauth-provider="google">
+          <span class="auth-provider-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path fill="#4285F4" d="M21.6 12.2c0-.7-.1-1.4-.2-2.1H12v4h5.4a4.6 4.6 0 0 1-2 3v2.5h3.2c1.9-1.8 3-4.3 3-7.4Z"/><path fill="#34A853" d="M12 22c2.7 0 5-0.9 6.6-2.4l-3.2-2.5c-.9.6-2 .9-3.4.9-2.6 0-4.8-1.8-5.6-4.1H3.1v2.6A10 10 0 0 0 12 22Z"/><path fill="#FBBC05" d="M6.4 13.9a6 6 0 0 1 0-3.8V7.5H3.1a10 10 0 0 0 0 9l3.3-2.6Z"/><path fill="#EA4335" d="M12 5.9c1.5 0 2.8.5 3.8 1.5l2.9-2.9A10 10 0 0 0 3.1 7.5l3.3 2.6C7.2 7.8 9.4 5.9 12 5.9Z"/></svg>
+          </span>
+          <span class="auth-provider-copy"><strong>Continue with Google</strong><small>Public profile only</small></span>
+          <span class="auth-provider-arrow" aria-hidden="true">→</span>
+        </button>
+        <button class="auth-provider auth-provider--github" type="button" data-oauth-provider="github">
+          <span class="auth-provider-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 .9a11.1 11.1 0 0 0-3.5 21.6c.6.1.8-.2.8-.5v-2c-3.2.7-3.8-1.4-3.8-1.4-.5-1.3-1.3-1.6-1.3-1.6-1-.7.1-.7.1-.7 1.1.1 1.7 1.1 1.7 1.1 1 1.8 2.7 1.3 3.3 1 .1-.8.4-1.3.7-1.6-2.6-.3-5.3-1.3-5.3-5.7 0-1.3.4-2.3 1.1-3.1-.1-.3-.5-1.5.1-3.1 0 0 1-.3 3.1 1.2a10.8 10.8 0 0 1 5.7 0c2.2-1.5 3.1-1.2 3.1-1.2.6 1.6.2 2.8.1 3.1.7.8 1.1 1.8 1.1 3.1 0 4.4-2.7 5.4-5.3 5.7.4.4.8 1.1.8 2.2v3.2c0 .3.2.6.8.5A11.1 11.1 0 0 0 12 .9Z"/></svg>
+          </span>
+          <span class="auth-provider-copy"><strong>Continue with GitHub</strong><small>Public profile only</small></span>
+          <span class="auth-provider-arrow" aria-hidden="true">→</span>
+        </button>
+      </div>
+
+      <div class="community-auth-profile" data-community-signed-in hidden>
+        <span class="community-auth-avatar" data-community-avatar aria-hidden="true"></span>
+        <span class="community-auth-copy">
+          <strong data-community-name>Signed in</strong>
+          <small data-community-email></small>
+          <span class="auth-provider-badge" data-community-provider></span>
+        </span>
+      </div>
+
+      <div class="community-auth-actions" data-community-signed-in hidden>
+        <a class="button button--primary button--full" href="./profile.html" data-community-profile>Open my profile <span class="button-arrow" aria-hidden="true">→</span></a>
+        <a class="button button--ghost button--full" href="./admin.html" data-community-admin hidden>Moderation console <span class="button-arrow" aria-hidden="true">↗</span></a>
+        <button class="button button--ghost button--full" id="communitySignOut" type="button">Sign out</button>
+      </div>
+
+      <p class="form-note">Same email on Google and GitHub? Supabase links both identities to one community account. That is expected and keeps your profile, posts and roles together.</p>
+    </div>
+  </dialog>
+
+  <dialog class="review-dialog bug-dialog community-dialog" id="bugDialog" aria-labelledby="bugDialogTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="bugDialogClose" type="button" aria-label="Close bug report form">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Private bug report</span>
+      <h2 id="bugDialogTitle">Send it<br><span class="text-gradient">to the garage.</span></h2>
+      <p class="dialog-lede">This goes straight to the developer. Nobody else in the community can read it. Include enough detail to reproduce the issue.</p>
+
+      <div class="community-auth-profile community-auth-profile--compact" data-community-signed-in hidden>
+        <span class="community-auth-avatar" data-community-avatar aria-hidden="true"></span>
+        <span class="community-auth-copy">
+          <strong data-community-name>Signed in</strong>
+          <small>Private report author</small>
+        </span>
+      </div>
+
+      <form class="review-form" id="bugForm" novalidate>
+        <div class="form-field">
+          <label for="bugTitle">Short title</label>
+          <input id="bugTitle" name="title" type="text" minlength="8" maxlength="120" placeholder="e.g. Wi-Fi drops after deep sleep" required>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="bugDevice">Device</label>
+            <select id="bugDevice" name="device">
+              <option>POCO F4 (munch)</option>
+              <option>Redmi K40S (munch-in)</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="bugRom">ROM</label>
+            <input id="bugRom" name="rom" type="text" maxlength="80" placeholder="Modded HyperOS 2.0 / ColorOS port / LineageOS 22" required>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-field">
+            <label for="bugRoot">Root flavor</label>
+            <select id="bugRoot" name="root">
+              <option>KowSU + SuSFS</option>
+              <option>Clean KernelSU</option>
+              <option>No Root</option>
+            </select>
+          </div>
+          <div class="form-field">
+            <label for="bugBuild">Build</label>
+            <input id="bugBuild" name="build" type="text" maxlength="32" placeholder="Build #133" value="Latest stable">
+          </div>
+        </div>
+
+        <div class="form-field">
+          <label for="bugDescription">What happened?</label>
+          <textarea id="bugDescription" name="description" rows="5" minlength="30" maxlength="3000" placeholder="Steps to reproduce, expected result, actual result. Keep it specific." required></textarea>
+          <span class="field-hint"><span id="bugCharCount">0</span> / 3000</span>
+        </div>
+
+        <div class="form-field">
+          <label for="bugLogs">Logs <span class="label-optional">(optional)</span></label>
+          <textarea id="bugLogs" name="logs" rows="3" maxlength="4000" placeholder="Paste a short dmesg/logcat excerpt or a link to the full log."></textarea>
+        </div>
+
+        <label class="check-field">
+          <input type="checkbox" id="bugModded" name="modded" required>
+          <span>I am running a modded HyperOS, ColorOS port or AOSP-based custom ROM — not stock HyperOS.</span>
+        </label>
+
+        <p class="form-status" id="bugStatus" hidden></p>
+        <button class="button button--primary button--full" id="bugSubmit" type="submit"><span>Send private report</span></button>
+        <p class="form-note">Private report. Only you and the maintainer can read it. Reports are rate-limited.</p>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="review-dialog community-dialog" id="forwardDialog" aria-labelledby="forwardDialogTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="forwardDialogClose" type="button" aria-label="Close forward dialog">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Forward message</span>
+      <h2 id="forwardDialogTitle">Send it <span class="text-gradient">somewhere else.</span></h2>
+      <p class="dialog-lede">Choose a public channel. The forwarded copy keeps the original author and channel visible.</p>
+      <div class="forward-preview" id="forwardPreview"></div>
+      <form class="forward-form" id="forwardForm">
+        <div class="forward-channels" id="forwardChannels" role="radiogroup" aria-label="Forward destination"></div>
+        <p class="form-status" id="forwardStatus" hidden></p>
+        <button class="button button--primary button--full" id="forwardSubmit" type="submit"><span>Forward message</span></button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="review-dialog report-dialog community-dialog" id="reportDialog" aria-labelledby="reportDialogTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="reportDialogClose" type="button" aria-label="Close report form">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Community safety</span>
+      <h2 id="reportDialogTitle">Flag <span class="text-gradient">a problem.</span></h2>
+      <p class="dialog-lede">Reports go to the moderation team only. Give a short, specific reason so the content can be reviewed quickly.</p>
+      <div class="report-preview" id="reportPreview" hidden></div>
+      <form class="review-form" id="reportForm" novalidate>
+        <input type="hidden" id="reportTargetType" name="targetType">
+        <input type="hidden" id="reportTargetId" name="targetId">
+        <div class="form-field">
+          <label for="reportReason">What is wrong?</label>
+          <textarea id="reportReason" name="reason" rows="4" minlength="5" maxlength="500" placeholder="e.g. Harassment, spam, scam link, personal information..." required></textarea>
+          <span class="field-hint"><span id="reportCharCount">0</span> / 500</span>
+        </div>
+        <p class="form-status" id="reportStatus" hidden></p>
+        <button class="button button--primary button--full" id="reportSubmit" type="submit"><span>Send report</span></button>
+        <p class="form-note">False or abusive reports can also be moderated. Reports are private.</p>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
+    <div class="settings-shell liquid-glass">
+      <button class="dialog-close" id="settingsClose" type="button" aria-label="Close settings">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Site controls</span>
+      <h2 id="settingsTitle">Settings</h2>
+      <div class="settings-list">
+        <a href="./" class="settings-item"><span>Kernel website</span><small>Downloads, compatibility and changelog</small><span aria-hidden="true">→</span></a>
+        <a href="./community.html" class="settings-item"><span>Community</span><small>Public channels and private bug desk</small><span aria-hidden="true">→</span></a>
+        <a href="./profile.html" class="settings-item" data-settings-profile hidden><span>My profile</span><small>Display name, username and bio</small><span aria-hidden="true">→</span></a>
+        <a href="./admin.html" class="settings-item" data-settings-admin hidden><span>Moderation console</span><small>Reports, bans, bugs and audit log</small><span aria-hidden="true">↗</span></a>
+        <button class="settings-item" type="button" data-settings-theme><span>Appearance</span><small data-settings-theme-label>Dark glass</small><span aria-hidden="true">◐</span></button>
+        <a href="https://t.me/Extremeplus_Support" class="settings-item" target="_blank" rel="noopener noreferrer"><span>Telegram support</span><small>Instant help outside the site</small><span aria-hidden="true">↗</span></a>
+      </div>
+      <p class="settings-note">Same Google/GitHub email links to one community account. Roles and posts stay together.</p>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript>
+    <div class="noscript-note">JavaScript is off. Public channels and links still render, but live chat, forwarding and the private bug desk need JavaScript.</div>
+  </noscript>
+
+  <script src="./assets/js/config.js" defer></script>
+  <script src="./assets/js/community-client.js" defer></script>
+  <script src="./assets/js/community.js" defer></script>
+  <script src="./assets/js/site-dock.js" defer></script>
+</body>
+</html>

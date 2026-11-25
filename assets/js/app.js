@@ -24,6 +24,7 @@
   const OAUTH_STATE_KEY = "extreme_plus_oauth_state_v1";
   const OAUTH_STATE_TTL = 15 * 60 * 1000;
   const PENDING_ACTION_KEY = "extreme_plus_pending_action_v1";
+  const COMMUNITY_REDIRECT_KEY = "extreme_plus_community_redirect_v1";
   const DRAFT_PREFIX = "extreme_plus_draft_v1:";
   const VISITOR_KEY = "extreme_plus_visitor_id";
   const CHAT_POLL_FALLBACK = 8000;
@@ -2379,12 +2380,18 @@
   }
 
   function authProviderOf(user) {
-    if (state.auth.profile && state.auth.profile.provider) return String(state.auth.profile.provider);
-    if (!user) return "";
-    if (user.app_metadata && user.app_metadata.provider) return String(user.app_metadata.provider);
-    if (Array.isArray(user.identities) && user.identities[0] && user.identities[0].provider) {
-      return String(user.identities[0].provider);
+    if (user && Array.isArray(user.identities) && user.identities.length) {
+      const providers = Array.from(new Set(
+        user.identities
+          .map((identity) => String(identity && identity.provider || "").toLowerCase())
+          .filter(Boolean)
+      ));
+      if (providers.length) return providers.join("+");
     }
+    if (user && user.app_metadata && user.app_metadata.provider) {
+      return String(user.app_metadata.provider);
+    }
+    if (state.auth.profile && state.auth.profile.provider) return String(state.auth.profile.provider);
     return "";
   }
 
@@ -2409,9 +2416,17 @@
   }
 
   function providerLabel(provider) {
-    if (provider === "google") return "Google";
-    if (provider === "github") return "GitHub";
-    return provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "";
+    if (!provider) return "";
+    return String(provider)
+      .split("+")
+      .map((part) => {
+        const value = part.trim().toLowerCase();
+        if (value === "google") return "Google";
+        if (value === "github") return "GitHub";
+        return value ? value.charAt(0).toUpperCase() + value.slice(1) : "";
+      })
+      .filter(Boolean)
+      .join(" + ");
   }
 
   function initialsFor(name) {
@@ -2740,6 +2755,11 @@
     ["members", "online", "visits", "logins", "reviews", "chat"].forEach((key) => {
       setText(`[data-stat="${key}"]`, formatNumber(stats[key] || 0));
     });
+    setText("[data-online-count]", formatNumber(stats.online || 0));
+    const channels = stats.channels && typeof stats.channels === "object" ? stats.channels : {};
+    $$("[data-channel-count]").forEach((node) => {
+      node.textContent = formatNumber(channels[node.getAttribute("data-channel-count")] || 0);
+    });
   }
 
   async function loadPublicStats() {
@@ -2799,6 +2819,33 @@
     sessionSet(PENDING_ACTION_KEY, JSON.stringify({ action, ts: Date.now() }));
   }
 
+  function peekCommunityRedirect() {
+    const raw = storageGet(COMMUNITY_REDIRECT_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || Date.now() - Number(parsed.ts || 0) > OAUTH_STATE_TTL) {
+        storageRemove(COMMUNITY_REDIRECT_KEY);
+        return null;
+      }
+      return parsed;
+    } catch (error) {
+      storageRemove(COMMUNITY_REDIRECT_KEY);
+      return null;
+    }
+  }
+
+  function consumeCommunityRedirect() {
+    const redirect = peekCommunityRedirect();
+    if (!redirect) return false;
+    storageRemove(COMMUNITY_REDIRECT_KEY);
+    const channel = ["general", "releases", "bugs", "off-topic"].includes(redirect.channel)
+      ? redirect.channel
+      : "general";
+    window.location.assign(`./community.html#${channel}`);
+    return true;
+  }
+
   function handleAuthCallback() {
     const url = new URL(window.location.href);
     const hash = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : "");
@@ -2807,6 +2854,7 @@
     if (error) {
       cleanAuthUrl();
       sessionRemove(OAUTH_STATE_KEY);
+      storageRemove(COMMUNITY_REDIRECT_KEY);
       clearPendingAction();
       const message = error === "access_denied"
         ? "Sign-in was cancelled."
@@ -2845,6 +2893,7 @@
     if (!stateValid) {
       cleanAuthUrl();
       sessionRemove(OAUTH_STATE_KEY);
+      storageRemove(COMMUNITY_REDIRECT_KEY);
       clearPendingAction();
       showToast("Sign-in could not be verified. Please open sign-in again.", 6500);
       return "error";
@@ -2884,6 +2933,7 @@
     if (state.auth.session) {
       await restoreAuthSession();
       await syncCommunityIdentity();
+      if (state.auth.session && consumeCommunityRedirect()) return;
     }
 
     updateAuthUI();
@@ -2900,6 +2950,7 @@
       }
       updateAuthUI();
       if (state.auth.user) {
+        if (consumeCommunityRedirect()) return;
         showToast(`Signed in as ${authNameOf(state.auth.user)}.`, 5000);
         window.setTimeout(completePendingAction, 260);
       }
@@ -2938,7 +2989,9 @@
     const input = $("#chatInput");
     if (input && isVisible(input)) {
       input.focus({ preventScroll: true });
+      return;
     }
+    window.location.assign("./community.html#general");
   }
 
   function completePendingAction() {
@@ -2970,8 +3023,7 @@
     }
 
     if (action === "chat") {
-      scrollToSection("community");
-      window.setTimeout(focusChatInput, 420);
+      window.location.assign("./community.html#general");
     }
   }
 
@@ -3794,6 +3846,133 @@
     state.chat.pollTimer = 0;
   }
 
+  /* =========================================================
+     Homepage community preview
+     ========================================================= */
+
+  function normalisePreviewRow(row) {
+    const message = normaliseChatRow(row);
+    if (!message) return null;
+    const channel = String(row.channel || "general").toLowerCase();
+    return {
+      ...message,
+      channel: ["general", "releases", "off-topic"].includes(channel) ? channel : "general",
+      forwarded_from_channel: String(row.forwarded_from_channel || "").toLowerCase(),
+      forwarded_from_name: String(row.forwarded_from_name || "").trim()
+    };
+  }
+
+  function previewAvatar(message) {
+    const avatar = create("span", "garage-preview-avatar");
+    const avatarUrl = safeHttpUrl(resizeAvatarUrl(message.author_avatar || "", 72));
+    if (avatarUrl) {
+      const image = document.createElement("img");
+      image.src = avatarUrl;
+      image.alt = "";
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => {
+        image.remove();
+        avatar.textContent = initialsFor(message.author_name);
+      }, { once: true });
+      avatar.appendChild(image);
+    } else {
+      avatar.textContent = initialsFor(message.author_name);
+    }
+    return avatar;
+  }
+
+  function createPreviewMessage(message) {
+    const item = document.createElement("a");
+    item.className = "garage-preview-message";
+    item.href = `./community.html#${message.channel}`;
+    item.setAttribute("aria-label", `Open #${message.channel} in The Garage`);
+
+    item.appendChild(previewAvatar(message));
+
+    const main = create("div", "garage-preview-message-main");
+    const head = create("div", "garage-preview-message-head");
+    head.appendChild(create("strong", "", message.author_name || "Rider"));
+    if (message.author_username) {
+      head.appendChild(create("span", "garage-preview-username", `@${message.author_username}`));
+    }
+    head.appendChild(create("span", "garage-preview-channel", `#${message.channel}`));
+    head.appendChild(create("time", "", formatChatTime(message.created_at)));
+    main.appendChild(head);
+
+    if (message.forwarded_from_channel) {
+      main.appendChild(create(
+        "span",
+        "garage-preview-forwarded",
+        `Forwarded from #${message.forwarded_from_channel}${message.forwarded_from_name ? ` · ${message.forwarded_from_name}` : ""}`
+      ));
+    }
+    main.appendChild(create("p", "garage-preview-body", truncate(message.body, 190)));
+    item.appendChild(main);
+    return item;
+  }
+
+  function renderCommunityPreview(messages) {
+    const target = $("#communityPreviewMessages");
+    if (!target) return;
+    target.replaceChildren();
+    target.setAttribute("aria-busy", "false");
+
+    if (!messages.length) {
+      const empty = create("div", "garage-preview-empty");
+      empty.appendChild(create("strong", "", "The garage is quiet."));
+      empty.appendChild(create("p", "", "Public channels are ready. Open The Garage to see the full conversation."));
+      target.appendChild(empty);
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    messages.forEach((message) => fragment.appendChild(createPreviewMessage(message)));
+    target.appendChild(fragment);
+  }
+
+  function renderCommunityPreviewFallback() {
+    const target = $("#communityPreviewMessages");
+    if (!target) return;
+    target.replaceChildren();
+    target.setAttribute("aria-busy", "false");
+    const empty = create("div", "garage-preview-empty");
+    empty.appendChild(create("strong", "", "The preview is taking a pit stop."));
+    empty.appendChild(create("p", "", "The full garage is still available."));
+    const link = create("a", "text-link", "Open The Garage ");
+    const arrow = create("span", "", "→");
+    arrow.setAttribute("aria-hidden", "true");
+    link.appendChild(arrow);
+    link.href = "./community.html";
+    empty.appendChild(link);
+    target.appendChild(empty);
+  }
+
+  async function loadCommunityPreview() {
+    if (!state.supabaseReady || state.communityMode !== "supabase") return;
+    const target = $("#communityPreviewMessages");
+    if (!target) return;
+    target.setAttribute("aria-busy", "true");
+    try {
+      const query = new URLSearchParams({
+        select: "id,user_id,created_at,author_name,author_avatar,author_username,provider,body,channel,forwarded_from_channel,forwarded_from_name",
+        channel: "in.(general,releases,off-topic)",
+        order: "created_at.desc",
+        limit: "4"
+      });
+      const rows = await supabaseRequest(supabaseTable(state.supabase.chatTable, query.toString()));
+      const messages = (Array.isArray(rows) ? rows : [])
+        .map(normalisePreviewRow)
+        .filter(Boolean)
+        .reverse();
+      renderCommunityPreview(messages);
+    } catch (error) {
+      console.warn("EXTREME++: community preview could not load.", error);
+      renderCommunityPreviewFallback();
+    }
+  }
+
   async function sendChatMessage() {
     if (state.chat.sending) return;
     const input = $("#chatInput");
@@ -3927,8 +4106,7 @@
     const provider = trigger.dataset.authProviderButton || "";
     if (state.auth.session) {
       if (action === "chat") {
-        scrollToSection("community");
-        window.setTimeout(focusChatInput, 380);
+        window.location.assign("./community.html#general");
       } else if (action === "review") {
         openReviewDialog(trigger);
       } else if (action === "bug") {
@@ -4134,10 +4312,12 @@
     initAuth();
     trackSiteVisit();
     loadPublicStats();
+    loadCommunityPreview();
     startStatsPolling();
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) return;
       loadPublicStats();
+      loadCommunityPreview();
       heartbeat();
     });
   }

@@ -47,6 +47,12 @@
       "name": "Community reviews",
       "short_name": "Reviews",
       "url": "./#reviews"
+    },
+    {
+      "name": "Open The Garage",
+      "short_name": "Community",
+      "url": "./community.html",
+      "description": "Public channels and the private bug desk"
     }
   ]
 }
