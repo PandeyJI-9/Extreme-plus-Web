@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://pandeyji-9.github.io/Extreme-plus-Web/sitemap.xml

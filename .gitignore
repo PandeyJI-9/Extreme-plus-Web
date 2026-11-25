@@ -1,0 +1,27 @@
+# Local and OS noise
+.DS_Store
+Thumbs.db
+*.log
+*.bak
+*.tmp
+
+# Dependencies and local configuration
+node_modules/
+.env
+.env.*
+
+# Keep the example file if one is added later
+!.env.example
+
+# Local credentials and secrets — never commit these
+token.txt
+github
+Github
+github token.txt
+*.token
+*.pem
+*.key
+*.p12
+*.jks
+credentials*.json
+secrets/

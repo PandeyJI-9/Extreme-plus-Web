@@ -9,6 +9,8 @@
   const kernel = config.kernel || {};
   const companion = config.companion || {};
   const reviewConfig = config.reviews || {};
+  const communityConfig = config.community || {};
+  const supabaseConfig = communityConfig.supabase || {};
   const links = config.links || {};
   const API_ROOT = "https://api.github.com";
   const CACHE_PREFIX = "extreme_plus_site_v2:";
@@ -16,6 +18,15 @@
   const REQUEST_TIMEOUT = Number(config.requestTimeoutMs) || 9000;
   const REDUCE_MOTION = window.matchMedia("(prefers-reduced-motion: reduce)");
   const FINE_POINTER = window.matchMedia("(hover: hover) and (pointer: fine)");
+
+  const THEME_KEY = "extreme_plus_theme";
+  const AUTH_KEY = "extreme_plus_auth_v1";
+  const OAUTH_STATE_KEY = "extreme_plus_oauth_state_v1";
+  const OAUTH_STATE_TTL = 15 * 60 * 1000;
+  const PENDING_ACTION_KEY = "extreme_plus_pending_action_v1";
+  const DRAFT_PREFIX = "extreme_plus_draft_v1:";
+  const CHAT_POLL_FALLBACK = 8000;
+  const AVATAR_PLACEHOLDER = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.2" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
@@ -30,7 +41,41 @@
     githubLoading: false,
     githubLoaded: false,
     reviewsLoading: false,
-    reviews: []
+    reviews: [],
+    theme: "dark",
+    communityMode: "github",
+    supabaseReady: false,
+    supabase: {
+      url: "",
+      anonKey: "",
+      reviewsTable: "reviews",
+      bugsTable: "bug_reports",
+      chatTable: "chat_messages",
+      chatPollMs: CHAT_POLL_FALLBACK,
+      chatLimit: 50
+    },
+    auth: {
+      session: null,
+      user: null,
+      loading: false,
+      pendingAction: "",
+      refreshTimer: 0,
+      opener: null
+    },
+    chat: {
+      messages: [],
+      loading: false,
+      sending: false,
+      initialized: false,
+      visible: true,
+      pollTimer: 0
+    },
+    reviewSubmitting: false,
+    reviewRomTouched: false,
+    reviewRootTouched: false,
+    bugSubmitting: false,
+    closeMobileMenu: null,
+    heroRedraw: null
   };
 
   const ROOT_LABELS = {
@@ -87,7 +132,7 @@
       highlights: [
         "EXTREME+ governor tuning for performance",
         "Extreme Kernel Manager kernel hooks",
-        "Dual HyperOS + AOSP target support",
+        "Dual modded HyperOS + AOSP target support",
         "ZSTD workspace hardening and CI fixes"
       ]
     },
@@ -149,6 +194,16 @@
     }
   }
 
+  function randomToken() {
+    const crypto = window.crypto;
+    if (crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+    if (crypto && typeof crypto.getRandomValues === "function") {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    }
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
+  }
+
   function formatDate(value, options) {
     const date = new Date(value);
     if (Number.isNaN(date.getTime())) return "";
@@ -178,7 +233,7 @@
   function getBuildLabel(release) {
     if (!release) return kernel.fallbackBuild || "Latest build";
     const haystack = `${release.name || ""} ${release.tag_name || ""}`;
-    const match = haystack.match(/build\s*#?\s*(\d+)/i);
+    const match = haystack.match(/build[\s._-]*#?\s*(\d+)/i);
     if (match) return `Build #${match[1]}`;
     return release.tag_name || release.name || "Latest build";
   }
@@ -225,6 +280,147 @@
       behavior: prefersReducedMotion() ? "auto" : "smooth",
       block: "start"
     });
+  }
+
+  function storageGet(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function storageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function storageRemove(key) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch (error) {
+      // Storage can be disabled. The in-memory state still updates.
+    }
+  }
+
+  function sessionGet(key) {
+    try {
+      return window.sessionStorage.getItem(key);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function sessionSet(key, value) {
+    try {
+      window.sessionStorage.setItem(key, value);
+      return true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  function sessionRemove(key) {
+    try {
+      window.sessionStorage.removeItem(key);
+    } catch (error) {
+      // Ignore disabled session storage.
+    }
+  }
+
+  function isVisible(node) {
+    if (!node || !node.isConnected) return false;
+    if (node.hidden) return false;
+    return Boolean(node.offsetWidth || node.offsetHeight || node.getClientRects().length);
+  }
+
+  function formatChatTime(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const now = new Date();
+    const sameDay = date.toDateString() === now.toDateString();
+    return new Intl.DateTimeFormat("en-GB", sameDay
+      ? { hour: "2-digit", minute: "2-digit" }
+      : { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }
+    ).format(date);
+  }
+
+  function normaliseSupabaseBase(value) {
+    return String(value || "")
+      .trim()
+      .replace(/\/+$/, "")
+      .replace(/\/rest\/v1$/i, "")
+      .replace(/\/auth\/v1$/i, "");
+  }
+
+  function validateSupabaseBase(value) {
+    try {
+      const url = new URL(value);
+      const local = url.hostname === "localhost" || url.hostname === "127.0.0.1";
+      if (url.protocol !== "https:" && !(local && url.protocol === "http:")) return false;
+      return Boolean(url.hostname);
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeout = REQUEST_TIMEOUT) {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), timeout);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      window.clearTimeout(timer);
+    }
+  }
+
+  function initTheme() {
+    const root = document.documentElement;
+    const toggle = $("#themeToggle");
+    const meta = $("#themeColorMeta");
+    const system = window.matchMedia("(prefers-color-scheme: light)");
+
+    const sync = (theme) => {
+      const next = theme === "light" ? "light" : "dark";
+      state.theme = next;
+      root.setAttribute("data-theme", next);
+      root.style.colorScheme = next;
+      if (meta) meta.setAttribute("content", next === "light" ? "#f3f5fa" : "#06070b");
+      if (toggle) {
+        const light = next === "light";
+        toggle.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
+        toggle.setAttribute("aria-pressed", String(light));
+        toggle.title = light ? "Switch to dark mode" : "Switch to light mode";
+      }
+      if (typeof state.heroRedraw === "function") {
+        window.requestAnimationFrame(() => state.heroRedraw());
+      }
+    };
+
+    sync(root.getAttribute("data-theme") === "light" ? "light" : "dark");
+
+    if (toggle) {
+      toggle.addEventListener("click", () => {
+        const next = state.theme === "light" ? "dark" : "light";
+        storageSet(THEME_KEY, next);
+        sync(next);
+      });
+    }
+
+    const onSystemChange = (event) => {
+      if (storageGet(THEME_KEY)) return;
+      sync(event.matches ? "light" : "dark");
+    };
+
+    if (typeof system.addEventListener === "function") {
+      system.addEventListener("change", onSystemChange);
+    } else if (typeof system.addListener === "function") {
+      system.addListener(onSystemChange);
+    }
   }
 
   /* =========================================================
@@ -301,11 +497,16 @@
     };
 
     toggle.addEventListener("click", () => setMenu(!isOpen));
+    state.closeMobileMenu = () => setMenu(false, false);
 
     menu.addEventListener("click", (event) => {
       const link = event.target.closest("a[href]");
       if (link) {
         setMenu(false, true);
+        return;
+      }
+      if (event.target.closest("[data-auth-trigger]")) {
+        setMenu(false, false);
         return;
       }
       if (event.target === menu) setMenu(false, true);
@@ -352,6 +553,7 @@
       "downloads",
       "install",
       "changelog",
+      "community",
       "reviews"
     ].map((id) => document.getElementById(id)).filter(Boolean);
 
@@ -399,7 +601,9 @@
     if (!elements.length) return;
 
     if (prefersReducedMotion() || !("IntersectionObserver" in window)) {
-      elements.forEach((element) => element.classList.add("is-visible"));
+      elements.forEach((element) => {
+        element.classList.add("is-visible", "is-settled");
+      });
       return;
     }
 
@@ -407,6 +611,7 @@
       entries.forEach((entry) => {
         if (!entry.isIntersecting) return;
         entry.target.classList.add("is-visible");
+        window.setTimeout(() => entry.target.classList.add("is-settled"), 1500);
         observer.unobserve(entry.target);
       });
     }, {
@@ -755,6 +960,7 @@
       sectionObserver.observe(hero);
     }
 
+    state.heroRedraw = draw;
     resize();
     if (!prefersReducedMotion()) start();
     else draw();
@@ -970,10 +1176,14 @@
     setText("[data-release-assets-count]", `${assetCount} ${assetCount === 1 ? "asset" : "assets"}`);
     setText("[data-download-total]", formatNumber(collectDownloads(release)));
 
-    const reviewBuild = $("#reviewBuild");
-    if (reviewBuild && (reviewBuild.value === "Latest stable" || reviewBuild.value === "Build #133")) {
-      reviewBuild.value = state.buildLabel;
-    }
+    ["#reviewBuild", "#bugBuild"].forEach((selector) => {
+      const buildInput = $(selector);
+      if (!buildInput) return;
+      buildInput.placeholder = state.buildLabel;
+      if (buildInput.value === "Latest stable") {
+        buildInput.value = state.buildLabel;
+      }
+    });
   }
 
   function renderRepoStats(repository) {
@@ -1053,7 +1263,7 @@
     });
 
     releases.forEach((release) => {
-      if (!release || release.draft) return;
+      if (!release || release.draft || release.prerelease) return;
       const buildLabel = getBuildLabel(release);
       const date = release.published_at || release.created_at;
       const highlights = releaseHighlights(release.body, 4);
@@ -1144,7 +1354,9 @@
       const name = asset.name || "";
       if (state.root === "noroot") return /no.?root/i.test(name);
       if (state.root === "susfs") return /susfs/i.test(name) && !/no.?susfs/i.test(name);
-      return /no.?susfs/i.test(name) || (/(kernelsu|ksu)/i.test(name) && !/susfs|no.?root/i.test(name));
+      const manager = /(kernelsu|ksu|kow.?su|resuki)/i.test(name);
+      const hasSuSFS = /susfs/i.test(name) && !/no.?susfs/i.test(name);
+      return manager && !hasSuSFS && !/no.?root/i.test(name);
     };
 
     return candidates.find(rootMatcher) || null;
@@ -1229,7 +1441,7 @@
 
     const meta = create("div", "match-meta");
     meta.appendChild(create("span", "", formatBytes(asset.size)));
-    meta.appendChild(create("span", "", state.rom === "AOSP" ? "AOSP" : "HyperOS"));
+    meta.appendChild(create("span", "", state.rom === "AOSP" ? "AOSP" : "Modded HyperOS"));
     meta.appendChild(create("span", "", ROOT_LABELS[state.root]));
     if (typeof asset.download_count === "number") {
       meta.appendChild(create("span", "", `${formatNumber(asset.download_count)} downloads`));
@@ -1239,6 +1451,7 @@
     const actions = create("div", "match-actions");
     const download = create("a", "button button--primary", "Download ZIP");
     download.href = safeHttpUrl(asset.browser_download_url) || links.kernelReleases;
+    download.target = "_blank";
     download.rel = "noopener noreferrer";
     download.setAttribute("aria-label", `Download ${asset.name || "kernel ZIP"}`);
     actions.appendChild(download);
@@ -1277,7 +1490,7 @@
     const link = $("#ekmDownload");
     if (!link) return;
     const apk = Array.isArray(state.assets)
-      ? state.assets.find((asset) => /(?:^|\W)ekm.*\.apk$|\.apk$/i.test(asset.name || ""))
+      ? state.assets.find((asset) => /ekm.*\.apk$/i.test(asset.name || ""))
       : null;
 
     if (apk) {
@@ -1319,9 +1532,7 @@
     if (releasesResult.status === "fulfilled") {
       const releases = Array.isArray(releasesResult.value.data) ? releasesResult.value.data : [];
       state.releases = releases;
-      state.latestRelease = releases.find((release) => !release.draft && !release.prerelease)
-        || releases.find((release) => !release.draft)
-        || null;
+      state.latestRelease = releases.find((release) => !release.draft && !release.prerelease) || null;
 
       if (state.latestRelease) {
         state.assets = Array.isArray(state.latestRelease.assets) ? state.latestRelease.assets : [];
@@ -1341,11 +1552,11 @@
         );
       } else {
         downloadError(
-          "No public release found.",
-          "The repository is reachable, but there is no published release to download yet.",
-          { eyebrow: "WAITING FOR A BUILD", retry: true }
+          "No public stable release found.",
+          "The repository is reachable, but there is no stable published release to download yet.",
+          { eyebrow: "WAITING FOR A STABLE BUILD", retry: true }
         );
-        setLivePill("error", "No release", "No published GitHub release was found");
+        setLivePill("error", "No stable release", "No stable published GitHub release was found");
       }
     } else {
       state.githubLoaded = false;
@@ -1392,7 +1603,7 @@
         state.rom = rom === "AOSP" ? "AOSP" : "HyperOS";
         updateDownloadPicker();
         if (state.githubLoaded) renderMatchedAsset(findReleaseAsset());
-        showToast(`${state.rom === "AOSP" ? "AOSP / custom ROM" : "HyperOS"} selected in the download matcher.`);
+        showToast(`${state.rom === "AOSP" ? "AOSP / custom ROM" : "Modded HyperOS"} selected in the download matcher.`);
         scrollToSection("downloads");
       });
     });
@@ -1450,7 +1661,7 @@
 
     let build = markdownSection(body, ["build tested", "build you tested", "build"]);
     if (!build) {
-      const buildMatch = body.match(/build\s*#?\s*\d+/i);
+      const buildMatch = body.match(/build[\s._-]*#?\s*\d+/i);
       build = buildMatch ? buildMatch[0] : "";
     }
 
@@ -1491,19 +1702,27 @@
   }
 
   function makeAvatar(review) {
-    if (review.avatar) {
+    const avatarUrl = safeHttpUrl(review.avatar || "");
+    if (avatarUrl) {
       const image = create("img", "review-avatar");
-      image.src = review.avatar;
+      image.src = avatarUrl;
       image.alt = "";
       image.width = 30;
       image.height = 30;
       image.loading = "lazy";
       image.decoding = "async";
       image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => {
+        image.replaceWith(create(
+          "span",
+          "review-avatar review-avatar--initials",
+          initialsFor(review.name)
+        ));
+      }, { once: true });
       return image;
     }
 
-    const initials = review.name
+    const initials = String(review.name || "Rider")
       .split(/\s+/)
       .filter(Boolean)
       .slice(0, 2)
@@ -1521,6 +1740,7 @@
 
     const top = create("div", "review-card-top");
     const stars = create("div", "review-stars");
+    stars.setAttribute("role", "img");
     if (review.rating) {
       stars.setAttribute("aria-label", `${review.rating} out of 5 stars`);
       for (let index = 1; index <= 5; index += 1) {
@@ -1531,6 +1751,7 @@
     } else {
       stars.setAttribute("aria-label", "No rating provided");
       const unrated = create("span", "is-empty", "UNRATED");
+      unrated.style.color = "var(--faint)";
       unrated.style.fontFamily = "var(--font-mono)";
       unrated.style.fontSize = "0.45rem";
       unrated.style.letterSpacing = "0.08em";
@@ -1539,20 +1760,26 @@
 
     top.appendChild(stars);
 
-    if (review.url) {
+    const sourceUrl = safeHttpUrl(review.url || "");
+    if (sourceUrl) {
       const source = create("a", "review-source", "GitHub ");
       const arrow = create("span", "", "↗");
       arrow.setAttribute("aria-hidden", "true");
       source.appendChild(arrow);
-      source.href = review.url;
+      source.href = sourceUrl;
       source.target = "_blank";
       source.rel = "noopener noreferrer";
       source.setAttribute("aria-label", "Open source review on GitHub");
       top.appendChild(source);
+    } else if (review.source === "community") {
+      const source = create("span", "review-source", "Community");
+      source.setAttribute("aria-label", "Published on this site");
+      top.appendChild(source);
     }
 
     article.appendChild(top);
-    article.appendChild(create("blockquote", "", truncate(review.review, 560)));
+    const reviewText = review.url ? truncate(review.review, 560) : String(review.review || "");
+    article.appendChild(create("blockquote", "", reviewText));
 
     const footer = create("footer", "review-card-footer");
     footer.appendChild(makeAvatar(review));
@@ -1592,7 +1819,7 @@
     const copy = create("div", "review-empty-copy");
     copy.appendChild(create("span", "", "THE WALL IS OPEN"));
     copy.appendChild(create("h3", "", "Your experience could be the first build report."));
-    copy.appendChild(create("p", "", "Flash the latest build, live with it for a few days, then leave an honest review. It will show up right here after you post it on GitHub."));
+    copy.appendChild(create("p", "", "Flash the latest build, live with it for a few days, then leave an honest review. Sign in with Google or GitHub to publish it."));
 
     const action = create("button", "text-link text-link--button", "Leave the first review ");
     const arrow = create("span", "", "→");
@@ -1600,6 +1827,7 @@
     action.appendChild(arrow);
     action.type = "button";
     action.id = "writeReviewEmptyBtn";
+    action.setAttribute("data-open-review", "");
     copy.appendChild(action);
     panel.appendChild(copy);
     grid.replaceChildren(panel);
@@ -1614,7 +1842,13 @@
     const copy = create("div", "review-empty-copy");
     copy.appendChild(create("span", "", "LIVE FEED OFFLINE"));
     copy.appendChild(create("h3", "", "The review feed is taking a pit stop."));
-    copy.appendChild(create("p", "", "GitHub did not answer this request. Your reviews are safe — open the issue feed directly, or try loading them again."));
+    copy.appendChild(create(
+      "p",
+      "",
+      state.communityMode === "supabase"
+        ? "The review feed did not answer this request. On-site reviews and GitHub issues are still open, or you can retry the feed."
+        : "GitHub did not answer this request. Your reviews are safe — open the issue feed directly, or try loading them again."
+    ));
 
     const actions = create("div");
     actions.style.display = "flex";
@@ -1667,9 +1901,11 @@
 
     [...curated, ...remote].forEach((review) => {
       if (!review) return;
-      const key = review.url || `${review.name}|${review.review.slice(0, 80)}`;
-      if (seen.has(key)) return;
+      const contentKey = `${review.name}|${String(review.review || "").slice(0, 80)}`;
+      const key = review.url || contentKey;
+      if (seen.has(key) || seen.has(contentKey)) return;
       seen.add(key);
+      seen.add(contentKey);
       merged.push(review);
     });
 
@@ -1680,172 +1916,1072 @@
     });
   }
 
-  async function hydrateReviews(force = false) {
-    if (state.reviewsLoading) return;
-    if (!reviewConfig.owner || !reviewConfig.repo) {
-      renderReviewError();
-      return;
-    }
+  function normaliseSupabaseReview(row) {
+    if (!row || typeof row !== "object") return null;
+    const body = String(row.body || "").trim();
+    if (!body) return null;
+    return {
+      name: truncate(String(row.author_name || "Rider"), 42),
+      username: "",
+      avatar: safeHttpUrl(row.author_avatar || ""),
+      rating: Number.isInteger(Number(row.rating)) ? Math.min(5, Math.max(1, Number(row.rating))) : null,
+      review: body,
+      rom: truncate(row.rom || "", 42),
+      root: truncate(row.root_flavor || "", 42),
+      build: truncate(row.build || "", 42),
+      date: row.created_at || "",
+      url: "",
+      source: "community"
+    };
+  }
 
-    const curated = Array.isArray(window.EXTREME_REVIEWS)
-      ? window.EXTREME_REVIEWS.map(normaliseCuratedReview).filter(Boolean)
-      : [];
+  async function fetchSupabaseReviews() {
+    const query = new URLSearchParams({
+      select: "id,user_id,created_at,author_name,author_avatar,provider,rating,body,rom,root_flavor,build",
+      order: "created_at.desc",
+      limit: "60"
+    });
+    const rows = await supabaseRequest(supabaseTable(state.supabase.reviewsTable, query.toString()));
+    return (Array.isArray(rows) ? rows : [])
+      .map(normaliseSupabaseReview)
+      .filter(Boolean);
+  }
 
-    state.reviewsLoading = true;
+  async function fetchGitHubIssueReviews(force = false) {
+    if (!reviewConfig.owner || !reviewConfig.repo) return [];
     const issuesUrl = apiUrl(
       `/repos/${reviewConfig.owner}/${reviewConfig.repo}/issues?state=all&sort=created&direction=desc&per_page=${Number(reviewConfig.issuesPerPage) || 50}`
     );
     const cacheKey = `${reviewConfig.owner}/${reviewConfig.repo}:reviews:${Number(reviewConfig.issuesPerPage) || 50}`;
+    const response = await fetchCached(issuesUrl, cacheKey, force);
+    const issues = Array.isArray(response.data) ? response.data : [];
+    return issues
+      .map(issueToReview)
+      .filter((review) => review && review.review && review.review.trim());
+  }
 
+  async function hydrateReviews(force = false) {
+    if (state.reviewsLoading) return false;
+
+    const curated = Array.isArray(window.EXTREME_REVIEWS)
+      ? window.EXTREME_REVIEWS.map(normaliseCuratedReview).filter(Boolean)
+      : [];
+    const previousReviews = Array.isArray(state.reviews) ? state.reviews.slice() : [];
+
+    state.reviewsLoading = true;
     try {
-      const response = await fetchCached(issuesUrl, cacheKey, force);
-      const issues = Array.isArray(response.data) ? response.data : [];
-      const remote = issues
-        .map(issueToReview)
-        .filter((review) => review && review.review && review.review.trim());
+      if (state.communityMode === "supabase") {
+        // Merge the on-site wall with the existing GitHub review issues so
+        // nothing posted before the migration disappears.
+        const [supabaseResult, githubResult] = await Promise.allSettled([
+          fetchSupabaseReviews(),
+          fetchGitHubIssueReviews(force)
+        ]);
+
+        if (supabaseResult.status === "rejected") {
+          console.warn("EXTREME++: could not load Supabase reviews.", supabaseResult.reason);
+        }
+        if (githubResult.status === "rejected") {
+          console.warn("EXTREME++: could not load GitHub review issues.", githubResult.reason);
+        }
+
+        const remote = [];
+        if (supabaseResult.status === "fulfilled") remote.push(...supabaseResult.value);
+        if (githubResult.status === "fulfilled") remote.push(...githubResult.value);
+
+        if (!remote.length && !curated.length
+          && (supabaseResult.status === "rejected" || githubResult.status === "rejected")) {
+          if (previousReviews.length) {
+            state.reviews = previousReviews;
+            renderReviews(previousReviews);
+          } else {
+            renderReviewError();
+          }
+          return false;
+        }
+
+        const reviews = mergeReviews(curated, remote);
+        state.reviews = reviews;
+        renderReviews(reviews);
+        return true;
+      }
+
+      let remote = [];
+      try {
+        remote = await fetchGitHubIssueReviews(force);
+      } catch (error) {
+        console.warn("EXTREME++: could not load the review wall.", error);
+        if (!curated.length) {
+          if (previousReviews.length) {
+            state.reviews = previousReviews;
+            renderReviews(previousReviews);
+          } else {
+            renderReviewError();
+          }
+          return false;
+        }
+      }
       const reviews = mergeReviews(curated, remote);
       state.reviews = reviews;
       renderReviews(reviews);
-    } catch (error) {
-      console.warn("EXTREME++: could not load the review wall.", error);
-      if (curated.length) {
-        state.reviews = curated;
-        renderReviews(curated);
-      } else {
-        renderReviewError();
-      }
+      return true;
     } finally {
       state.reviewsLoading = false;
+    }
+  }
+
+  async function refreshReviewWall(button) {
+    if (!button || state.reviewsLoading) return;
+    const label = button.querySelector("[data-refresh-label]");
+    const original = label ? label.textContent : "";
+    button.disabled = true;
+    button.setAttribute("aria-busy", "true");
+    if (label) label.textContent = "Refreshing…";
+    let ok = false;
+    try {
+      ok = await hydrateReviews(true);
+    } catch (error) {
+      console.warn("EXTREME++: review wall refresh failed.", error);
+    } finally {
+      if (label) label.textContent = original;
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+    showToast(ok ? "Review wall refreshed." : "The wall could not refresh. Try again in a moment.", ok ? 3200 : 5200);
+  }
+
+  /* =========================================================
+     Community, Supabase auth and dialogs
+     ========================================================= */
+
+  function showFormStatus(target, message, tone = "info") {
+    if (!target) return;
+    target.textContent = message || "";
+    target.className = "form-status" + (tone ? ` is-${tone}` : "");
+    target.hidden = !message;
+  }
+
+  function clearFormStatus(target) {
+    if (!target) return;
+    target.textContent = "";
+    target.className = "form-status";
+    target.hidden = true;
+  }
+
+  function setButtonBusy(button, busy, label) {
+    if (!button) return;
+    const text = button.querySelector("[data-button-label], span");
+    if (busy) {
+      button.dataset.busy = "true";
+      if (!button.dataset.idleLabel && text) button.dataset.idleLabel = text.textContent;
+      if (text && label) text.textContent = label;
+      button.disabled = true;
+      button.setAttribute("aria-busy", "true");
+    } else {
+      delete button.dataset.busy;
+      if (text && button.dataset.idleLabel) text.textContent = button.dataset.idleLabel;
+      delete button.dataset.idleLabel;
+      button.disabled = false;
+      button.removeAttribute("aria-busy");
+    }
+  }
+
+  function syncDialogLock() {
+    const open = $$("dialog[open]").length > 0;
+    document.body.classList.toggle("dialog-open", open);
+  }
+
+  function firstDialogFocus(dialog, selector) {
+    if (!dialog) return null;
+    if (selector) {
+      const preferred = $$(selector, dialog).find(isVisible);
+      if (preferred) return preferred;
+    }
+    return $$("button, [href], input:not([type=\"hidden\"]), select, textarea", dialog)
+      .find((node) => isVisible(node) && !node.disabled && node.tabIndex !== -1);
+  }
+
+  function showDialog(dialog, opener, focusSelector) {
+    if (!dialog) return;
+    dialog._opener = opener || document.activeElement;
+    if (typeof dialog.showModal === "function" && !dialog.open) {
+      try {
+        dialog.showModal();
+      } catch (error) {
+        dialog.setAttribute("open", "");
+      }
+    } else if (!dialog.open) {
+      dialog.setAttribute("open", "");
+    }
+    syncDialogLock();
+    dialog.scrollTop = 0;
+    window.setTimeout(() => {
+      const target = firstDialogFocus(dialog, focusSelector);
+      if (target) target.focus({ preventScroll: true });
+    }, 70);
+  }
+
+  function hideDialog(dialog) {
+    if (!dialog) return;
+    const opener = dialog._opener;
+    if (typeof dialog.close === "function" && dialog.open) dialog.close();
+    else dialog.removeAttribute("open");
+    syncDialogLock();
+    if (opener && isVisible(opener) && typeof opener.focus === "function") {
+      opener.focus({ preventScroll: true });
+    }
+  }
+
+  function initDialogChrome(dialog, closeSelector) {
+    if (!dialog) return;
+    const closeButton = closeSelector ? $(closeSelector) : null;
+    if (closeButton) closeButton.addEventListener("click", () => hideDialog(dialog));
+    dialog.addEventListener("click", (event) => {
+      if (event.target === dialog) hideDialog(dialog);
+    });
+    dialog.addEventListener("close", () => {
+      syncDialogLock();
+      const opener = dialog._opener;
+      if (opener && isVisible(opener) && typeof opener.focus === "function") {
+        window.setTimeout(() => {
+          if (!dialog.open) opener.focus({ preventScroll: true });
+        }, 0);
+      }
+    });
+    dialog.addEventListener("cancel", () => window.setTimeout(syncDialogLock, 0));
+  }
+
+  function normaliseSupabaseConfig() {
+    const base = normaliseSupabaseBase(supabaseConfig.url);
+    const key = String(supabaseConfig.anonKey || "").trim();
+    const ready = validateSupabaseBase(base) && key.length > 10;
+    const requested = String(communityConfig.mode || "auto").toLowerCase();
+    let mode = "github";
+
+    if (requested === "github") mode = "github";
+    else if (ready) mode = "supabase";
+    else if (requested === "supabase") {
+      console.warn("EXTREME++: community.mode is \"supabase\" but the Supabase URL or anon key is missing. Falling back to GitHub.");
+    }
+
+    state.supabase = {
+      url: base,
+      anonKey: key,
+      reviewsTable: String(supabaseConfig.reviewsTable || "reviews"),
+      bugsTable: String(supabaseConfig.bugsTable || "bug_reports"),
+      chatTable: String(supabaseConfig.chatTable || "chat_messages"),
+      chatPollMs: Math.max(4000, Number(supabaseConfig.chatPollMs) || CHAT_POLL_FALLBACK),
+      chatLimit: Math.min(100, Math.max(1, Number(supabaseConfig.chatLimit) || 50))
+    };
+    state.communityMode = mode;
+    state.supabaseReady = mode === "supabase" && ready;
+    document.documentElement.setAttribute("data-community", mode);
+  }
+
+  function supabaseHeaders(authenticated) {
+    const headers = {
+      apikey: state.supabase.anonKey,
+      Accept: "application/json"
+    };
+    if (authenticated) {
+      const token = state.auth.session && state.auth.session.access_token;
+      if (!token) {
+        const error = new Error("Sign in required.");
+        error.status = 401;
+        throw error;
+      }
+      headers.Authorization = `Bearer ${token}`;
+    }
+    return headers;
+  }
+
+  async function supabaseRequest(path, options = {}) {
+    if (!state.supabaseReady) {
+      const error = new Error("The community backend is not configured.");
+      error.status = 503;
+      throw error;
+    }
+    const headers = {
+      ...supabaseHeaders(Boolean(options.auth)),
+      ...(options.headers || {})
+    };
+    let body;
+    if (options.body !== undefined) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(options.body);
+    }
+
+    const response = await fetchWithTimeout(`${state.supabase.url}${path}`, {
+      method: options.method || "GET",
+      headers,
+      body,
+      cache: "no-store"
+    });
+    const text = await response.text();
+    let data = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch (error) {
+        data = text;
+      }
+    }
+    if (!response.ok) {
+      const message = (data && (data.msg || data.message || data.error_description || data.error))
+        || `The community backend returned ${response.status}.`;
+      const error = new Error(message);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  function supabaseTable(name, query) {
+    return `/rest/v1/${encodeURIComponent(name)}${query ? `?${query}` : ""}`;
+  }
+
+  function isRateLimitError(error) {
+    if (!error) return false;
+    const data = error.data && typeof error.data === "object" ? error.data : {};
+    const code = data.code || data.error_code || "";
+    return error.status === 429
+      || code === "PT429"
+      || /rate limit/i.test(String(error.message || ""));
+  }
+
+  function normaliseSession(payload) {
+    if (!payload || !payload.access_token) return null;
+    const rawExpires = Number(payload.expires_at) || 0;
+    const expiresAt = rawExpires
+      ? (rawExpires > 1e12 ? rawExpires : rawExpires * 1000)
+      : Date.now() + (Number(payload.expires_in) || 3600) * 1000;
+    return {
+      access_token: String(payload.access_token),
+      refresh_token: String(payload.refresh_token || ""),
+      expires_at: expiresAt,
+      token_type: String(payload.token_type || "bearer")
+    };
+  }
+
+  function loadStoredSession() {
+    const raw = storageGet(AUTH_KEY);
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.access_token) return null;
+      return normaliseSession(parsed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function saveStoredSession(session) {
+    if (!session) return;
+    storageSet(AUTH_KEY, JSON.stringify(session));
+  }
+
+  function clearAuthSession() {
+    window.clearTimeout(state.auth.refreshTimer);
+    state.auth.refreshTimer = 0;
+    state.auth.session = null;
+    state.auth.user = null;
+    storageRemove(AUTH_KEY);
+    syncDialogLock();
+  }
+
+  function authProviderOf(user) {
+    if (!user) return "";
+    if (user.app_metadata && user.app_metadata.provider) return String(user.app_metadata.provider);
+    if (Array.isArray(user.identities) && user.identities[0] && user.identities[0].provider) {
+      return String(user.identities[0].provider);
+    }
+    return "";
+  }
+
+  function authNameOf(user) {
+    if (!user) return "";
+    const meta = user.user_metadata || {};
+    const name = meta.full_name || meta.name || meta.user_name || meta.preferred_username
+      || (user.email ? String(user.email).split("@")[0] : "");
+    return truncate(String(name || "Rider").trim(), 42) || "Rider";
+  }
+
+  function authAvatarOf(user) {
+    if (!user) return "";
+    const meta = user.user_metadata || {};
+    return safeHttpUrl(meta.avatar_url || meta.picture || user.avatar_url || "");
+  }
+
+  function providerLabel(provider) {
+    if (provider === "google") return "Google";
+    if (provider === "github") return "GitHub";
+    return provider ? provider.charAt(0).toUpperCase() + provider.slice(1) : "";
+  }
+
+  function initialsFor(name) {
+    return String(name || "EX")
+      .split(/\s+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0])
+      .join("")
+      .toUpperCase() || "EX";
+  }
+
+  function renderAuthAvatar(target, user) {
+    if (!target) return;
+    target.replaceChildren();
+    if (!user) {
+      target.innerHTML = AVATAR_PLACEHOLDER;
+      return;
+    }
+    const avatar = authAvatarOf(user);
+    if (avatar) {
+      const image = document.createElement("img");
+      image.src = avatar;
+      image.alt = "";
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => {
+        image.remove();
+        target.textContent = initialsFor(authNameOf(user));
+      }, { once: true });
+      target.appendChild(image);
+      return;
+    }
+    target.textContent = initialsFor(authNameOf(user));
+  }
+
+  function updateComposerLabels() {
+    const signedIn = Boolean(state.auth.session);
+    const reviewLabel = $("[data-review-submit-label]");
+    const bugLabel = $("[data-bug-submit-label]");
+
+    if (state.communityMode === "supabase") {
+      if (reviewLabel) reviewLabel.textContent = signedIn ? "Publish review" : "Sign in to publish";
+      if (bugLabel) bugLabel.textContent = signedIn ? "Send private report" : "Sign in to report";
+    } else {
+      if (reviewLabel) reviewLabel.textContent = "Continue on GitHub";
+      if (bugLabel) bugLabel.textContent = "Continue on GitHub";
+    }
+  }
+
+  function updateAuthUI() {
+    const signedIn = Boolean(state.auth.session);
+    const user = state.auth.user;
+    const name = signedIn ? authNameOf(user) : "Not signed in";
+    const provider = signedIn ? authProviderOf(user) : "";
+
+    $$("[data-auth-signed-out]").forEach((node) => {
+      node.hidden = signedIn;
+    });
+    $$("[data-auth-signed-in]").forEach((node) => {
+      node.hidden = !signedIn;
+    });
+
+    // Community auth is unavailable in GitHub fallback mode, so keep every
+    // auth trigger hidden even when it is part of a signed-out panel.
+    $$("[data-auth-trigger]").forEach((trigger) => {
+      trigger.hidden = state.communityMode !== "supabase";
+      trigger.classList.toggle("is-signed-in", signedIn);
+      trigger.setAttribute(
+        "aria-label",
+        signedIn ? `Account: ${name}. Open community account.` : "Sign in to the community"
+      );
+    });
+
+    $$("[data-auth-label]").forEach((node) => {
+      const inMobileMenu = Boolean(node.closest(".mobile-auth"));
+      node.textContent = signedIn ? name : (inMobileMenu ? "Sign in to the community" : "Sign in");
+    });
+
+    $$("[data-auth-name]").forEach((node) => {
+      node.textContent = signedIn ? name : "Not signed in";
+    });
+    $$("[data-auth-hint]").forEach((node) => {
+      if (signedIn) {
+        node.textContent = "Signed in. Your public name and avatar appear with your post.";
+      } else if (node.closest("#bugDialog")) {
+        node.textContent = "Sign in with Google or GitHub to send a report.";
+      } else {
+        node.textContent = "Sign in with Google or GitHub to publish.";
+      }
+    });
+    $$("[data-auth-email]").forEach((node) => {
+      node.textContent = signedIn && user && user.email ? String(user.email) : "";
+    });
+    $$("[data-auth-provider-label]").forEach((node) => {
+      node.textContent = providerLabel(provider);
+    });
+    $$("[data-auth-avatar]").forEach((node) => renderAuthAvatar(node, signedIn ? user : null));
+
+    const nameField = $("[data-review-name-field]");
+    const nameInput = $("#reviewName");
+    if (nameInput) {
+      const githubMode = state.communityMode !== "supabase";
+      nameInput.required = githubMode;
+      nameInput.disabled = !githubMode;
+      if (nameField) nameField.hidden = !githubMode;
+    }
+
+    const unconfigured = $("[data-community-unconfigured]");
+    if (unconfigured) unconfigured.hidden = state.supabaseReady;
+    const providers = $(".auth-providers");
+    if (providers) providers.hidden = !state.supabaseReady || signedIn;
+
+    const authStatus = $("#authStatus");
+    if (authStatus && state.communityMode !== "supabase" && !authStatus.textContent) {
+      showFormStatus(authStatus, "On-site sign-in is not configured. Use GitHub or Telegram for now.", "info");
+    }
+
+    updateComposerLabels();
+
+    // Signed-in highlighting is part of the chat render, so refresh it when
+    // the account state changes instead of waiting for the next poll.
+    if (state.chat.initialized) renderChatMessages(state.chat.messages, false);
+  }
+
+  function scheduleAuthRefresh() {
+    window.clearTimeout(state.auth.refreshTimer);
+    state.auth.refreshTimer = 0;
+    if (!state.auth.session) return;
+    const expires = Number(state.auth.session.expires_at) || 0;
+    const delay = Math.max(30000, expires - Date.now() - 120000);
+    state.auth.refreshTimer = window.setTimeout(() => {
+      refreshAuthSession().catch((error) => {
+        console.warn("EXTREME++: session refresh failed.", error);
+        if (error.status === 400 || error.status === 401) {
+          clearAuthSession();
+          updateAuthUI();
+          showToast("Your community session expired. Sign in again to continue.", 5600);
+        }
+      });
+    }, delay);
+  }
+
+  async function fetchAuthUser() {
+    const user = await supabaseRequest("/auth/v1/user", { auth: true });
+    if (user && user.id) state.auth.user = user;
+    return user;
+  }
+
+  async function refreshAuthSession() {
+    const session = state.auth.session;
+    if (!session || !session.refresh_token) {
+      const error = new Error("No refresh token available.");
+      error.status = 401;
+      throw error;
+    }
+    const payload = await supabaseRequest("/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      body: { refresh_token: session.refresh_token }
+    });
+    const next = normaliseSession(payload);
+    if (!next) {
+      const error = new Error("The community backend returned an invalid session.");
+      error.status = 401;
+      throw error;
+    }
+    state.auth.session = next;
+    if (payload.user) state.auth.user = payload.user;
+    saveStoredSession(next);
+    scheduleAuthRefresh();
+    if (!state.auth.user) await fetchAuthUser();
+    updateAuthUI();
+    return next;
+  }
+
+  async function restoreAuthSession() {
+    if (!state.auth.session) return;
+    try {
+      if (!state.auth.session.access_token || Date.now() >= state.auth.session.expires_at - 60000) {
+        await refreshAuthSession();
+      } else {
+        await fetchAuthUser();
+      }
+      scheduleAuthRefresh();
+    } catch (error) {
+      if (error.status === 401 && state.auth.session && state.auth.session.refresh_token) {
+        try {
+          await refreshAuthSession();
+          return;
+        } catch (refreshError) {
+          console.warn("EXTREME++: saved session could not be refreshed.", refreshError);
+        }
+      }
+      clearAuthSession();
+    }
+    updateAuthUI();
+  }
+
+  function cleanAuthUrl() {
+    const url = new URL(window.location.href);
+    [
+      "access_token", "refresh_token", "expires_in", "expires_at", "token_type",
+      "type", "error", "error_description", "error_code", "code", "state",
+      "provider_token", "provider_refresh_token"
+    ].forEach((key) => url.searchParams.delete(key));
+    url.hash = "";
+    history.replaceState(null, "", url.pathname + url.search);
+  }
+
+  function readPendingAction() {
+    const raw = sessionGet(PENDING_ACTION_KEY);
+    if (!raw) return "";
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || !parsed.action || Date.now() - Number(parsed.ts || 0) > 15 * 60 * 1000) {
+        sessionRemove(PENDING_ACTION_KEY);
+        return "";
+      }
+      sessionRemove(PENDING_ACTION_KEY);
+      return String(parsed.action);
+    } catch (error) {
+      sessionRemove(PENDING_ACTION_KEY);
+      return "";
+    }
+  }
+
+  function writePendingAction(action) {
+    if (!action) {
+      sessionRemove(PENDING_ACTION_KEY);
+      return;
+    }
+    sessionSet(PENDING_ACTION_KEY, JSON.stringify({ action, ts: Date.now() }));
+  }
+
+  function handleAuthCallback() {
+    const url = new URL(window.location.href);
+    const hash = new URLSearchParams(url.hash.startsWith("#") ? url.hash.slice(1) : "");
+    const error = hash.get("error_description") || hash.get("error")
+      || url.searchParams.get("error_description") || url.searchParams.get("error");
+    if (error) {
+      cleanAuthUrl();
+      sessionRemove(OAUTH_STATE_KEY);
+      clearPendingAction();
+      const message = error === "access_denied"
+        ? "Sign-in was cancelled."
+        : String(error).replace(/\+/g, " ");
+      showToast(message, 6500);
+      return "error";
+    }
+
+    const access = hash.get("access_token");
+    if (!access) {
+      if (url.searchParams.get("code")) {
+        cleanAuthUrl();
+        showToast("This sign-in tab needs to be reopened from the community section.", 6500);
+        return "error";
+      }
+      return "none";
+    }
+
+    const returnedState = hash.get("state") || url.searchParams.get("state") || "";
+    const rawState = sessionGet(OAUTH_STATE_KEY);
+    let storedState = null;
+    try {
+      storedState = rawState ? JSON.parse(rawState) : null;
+    } catch (error) {
+      storedState = null;
+    }
+    const stateAge = storedState ? Date.now() - Number(storedState.ts) : Infinity;
+    const stateValid = Boolean(
+      storedState
+      && storedState.value
+      && Number.isFinite(stateAge)
+      && stateAge >= 0
+      && stateAge <= OAUTH_STATE_TTL
+      && (!returnedState || storedState.value === returnedState)
+    );
+    if (!stateValid) {
+      cleanAuthUrl();
+      sessionRemove(OAUTH_STATE_KEY);
+      clearPendingAction();
+      showToast("Sign-in could not be verified. Please open sign-in again.", 6500);
+      return "error";
+    }
+    sessionRemove(OAUTH_STATE_KEY);
+
+    const session = normaliseSession({
+      access_token: access,
+      refresh_token: hash.get("refresh_token") || "",
+      expires_in: hash.get("expires_in"),
+      expires_at: hash.get("expires_at"),
+      token_type: hash.get("token_type")
+    });
+    if (!session) {
+      cleanAuthUrl();
+      showToast("The sign-in response was incomplete. Please try again.", 6000);
+      return "error";
+    }
+
+    state.auth.session = session;
+    state.auth.pendingAction = readPendingAction();
+    saveStoredSession(session);
+    cleanAuthUrl();
+    return "signed-in";
+  }
+
+  async function initAuth() {
+    if (state.communityMode !== "supabase") {
+      updateAuthUI();
+      return;
+    }
+
+    const callback = handleAuthCallback();
+    const stored = loadStoredSession();
+    if (stored) state.auth.session = stored;
+
+    if (state.auth.session) {
+      await restoreAuthSession();
+    }
+
+    updateAuthUI();
+
+    if (callback === "signed-in" && state.auth.session) {
+      if (!state.auth.user) {
+        try {
+          await fetchAuthUser();
+          scheduleAuthRefresh();
+        } catch (error) {
+          console.warn("EXTREME++: signed in, but the profile could not be loaded.", error);
+        }
+      }
+      updateAuthUI();
+      if (state.auth.user) {
+        showToast(`Signed in as ${authNameOf(state.auth.user)}.`, 5000);
+        window.setTimeout(completePendingAction, 260);
+      }
+    }
+  }
+
+  function beginOAuth(provider, action) {
+    if (!state.supabaseReady) {
+      showToast("On-site sign-in is not configured yet. Use GitHub issues or Telegram.", 6000);
+      return;
+    }
+    if (!provider) return;
+    if (action) {
+      state.auth.pendingAction = action;
+      writePendingAction(action);
+    } else {
+      sessionRemove(PENDING_ACTION_KEY);
+    }
+
+    const value = randomToken();
+    sessionSet(OAUTH_STATE_KEY, JSON.stringify({ value, ts: Date.now() }));
+
+    const redirect = new URL(".", window.location.href).href;
+    const params = new URLSearchParams({
+      provider,
+      redirect_to: redirect,
+      state: value
+    });
+    const authorizeUrl = `${state.supabase.url}/auth/v1/authorize?${params.toString()}`;
+    persistDraftsNow();
+    showFormStatus($("#authStatus"), `Redirecting to ${providerLabel(provider)}…`, "info");
+    window.location.assign(authorizeUrl);
+  }
+
+  function focusChatInput() {
+    const input = $("#chatInput");
+    if (input && isVisible(input)) {
+      input.focus({ preventScroll: true });
+    }
+  }
+
+  function completePendingAction() {
+    const action = state.auth.pendingAction;
+    state.auth.pendingAction = "";
+    sessionRemove(PENDING_ACTION_KEY);
+    if (!action) return;
+
+    if (action === "review") {
+      const dialog = $("#reviewDialog");
+      if (dialog && dialog.open) {
+        const textarea = $("#reviewText");
+        if (textarea) textarea.focus({ preventScroll: true });
+      } else {
+        openReviewDialog();
+      }
+      return;
+    }
+
+    if (action === "bug") {
+      const dialog = $("#bugDialog");
+      if (dialog && dialog.open) {
+        const title = $("#bugTitle");
+        if (title) title.focus({ preventScroll: true });
+      } else {
+        openBugDialog();
+      }
+      return;
+    }
+
+    if (action === "chat") {
+      scrollToSection("community");
+      window.setTimeout(focusChatInput, 420);
+    }
+  }
+
+  function clearPendingAction() {
+    state.auth.pendingAction = "";
+    sessionRemove(PENDING_ACTION_KEY);
+  }
+
+  function openAuthDialog(options = {}) {
+    const dialog = $("#authDialog");
+    if (!dialog) return;
+    if (state.communityMode !== "supabase") {
+      showDialog(dialog, options.opener, "[data-community-unconfigured] a");
+      return;
+    }
+    state.auth.opener = options.opener || document.activeElement;
+    state.auth.pendingAction = options.action || "";
+    updateAuthUI();
+    clearFormStatus($("#authStatus"));
+    const signedIn = Boolean(state.auth.session);
+    showDialog(
+      dialog,
+      options.opener,
+      signedIn ? "[data-auth-continue]" : "[data-auth-provider]"
+    );
+  }
+
+  function initAuthDialog() {
+    const dialog = $("#authDialog");
+    if (!dialog) return;
+    initDialogChrome(dialog, "#authDialogClose");
+
+    $$("[data-auth-provider]", dialog).forEach((button) => {
+      button.addEventListener("click", () => {
+        beginOAuth(button.dataset.authProvider, state.auth.pendingAction);
+      });
+    });
+
+    const continueButton = $("[data-auth-continue]", dialog);
+    if (continueButton) {
+      continueButton.addEventListener("click", () => {
+        hideDialog(dialog);
+        completePendingAction();
+      });
+    }
+
+    const signOutButton = $("#authSignOut", dialog);
+    if (signOutButton) {
+      signOutButton.addEventListener("click", async () => {
+        signOutButton.disabled = true;
+        try {
+          await signOut();
+        } finally {
+          signOutButton.disabled = false;
+        }
+      });
+    }
+  }
+
+  async function signOut() {
+    const session = state.auth.session;
+    try {
+      if (session && session.access_token) {
+        await supabaseRequest("/auth/v1/logout", { method: "POST", auth: true });
+      }
+    } catch (error) {
+      console.warn("EXTREME++: remote sign-out failed; clearing locally.", error);
+    }
+    clearAuthSession();
+    clearPendingAction();
+    updateAuthUI();
+    hideDialog($("#authDialog"));
+    showToast("Signed out of the community.", 4200);
+  }
+
+  function setReviewRating(value) {
+    const ratingInput = $("#reviewRating");
+    const starGroup = $("#starInput");
+    if (!ratingInput || !starGroup) return;
+    const rating = Math.min(5, Math.max(1, Number(value) || 5));
+    ratingInput.value = String(rating);
+    $$(".rating-star", starGroup).forEach((star) => {
+      const starValue = Number(star.dataset.value);
+      star.classList.toggle("is-active", starValue <= rating);
+      star.setAttribute("aria-pressed", String(starValue === rating));
+    });
+  }
+
+  function syncReviewFormSelection() {
+    const romSelect = $("#reviewRom");
+    const rootSelect = $("#reviewRoot");
+    if (romSelect && !state.reviewRomTouched) {
+      romSelect.value = state.rom === "AOSP" ? "AOSP / Custom ROM" : "Modded HyperOS";
+    }
+    if (rootSelect && !state.reviewRootTouched) {
+      rootSelect.value = ROOT_LABELS[state.root] || "KowSU + SuSFS";
+    }
+  }
+
+  function openReviewDialog(trigger) {
+    const dialog = $("#reviewDialog");
+    if (!dialog) return;
+    updateAuthUI();
+    syncReviewFormSelection();
+    setReviewRating(Number($("#reviewRating") && $("#reviewRating").value) || 5);
+    clearFormStatus($("#reviewStatus"));
+    const focus = state.communityMode === "supabase" && !state.auth.session
+      ? "[data-auth-trigger]"
+      : (state.communityMode === "supabase" ? "#reviewText" : "#reviewName");
+    showDialog(dialog, trigger, focus);
+  }
+
+  function validateReviewForm() {
+    const form = $("#reviewForm");
+    const reviewInput = $("#reviewText");
+    const status = $("#reviewStatus");
+    if (!form || !reviewInput) return false;
+    const text = reviewInput.value.trim();
+    if (!text || text.length < 20) {
+      showFormStatus(status, "Write at least 20 characters so the review is useful.", "error");
+      reviewInput.focus();
+      return false;
+    }
+    if (!form.reportValidity()) {
+      showFormStatus(status, "Check the highlighted fields and try again.", "error");
+      return false;
+    }
+    clearFormStatus(status);
+    return true;
+  }
+
+  async function submitSupabaseReview(payload) {
+    const status = $("#reviewStatus");
+    const submit = $("#reviewSubmit");
+    state.reviewSubmitting = true;
+    setButtonBusy(submit, true, "Publishing…");
+    clearFormStatus(status);
+    try {
+      const rows = await supabaseRequest(supabaseTable(state.supabase.reviewsTable), {
+        method: "POST",
+        auth: true,
+        headers: { Prefer: "return=representation" },
+        body: payload
+      });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      if (row) {
+        const review = normaliseSupabaseReview(row);
+        if (review) {
+          state.reviews = mergeReviews([review], state.reviews);
+          renderReviews(state.reviews);
+        }
+      } else {
+        hydrateReviews(true);
+      }
+
+      const textarea = $("#reviewText");
+      if (textarea) textarea.value = "";
+      setReviewRating(5);
+      const count = $("#reviewCharCount");
+      if (count) count.textContent = "0";
+      clearDraft("review");
+      hideDialog($("#reviewDialog"));
+      showToast("Review published. Thank you for putting it on the record.", 5200);
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+        showFormStatus(status, "Your session expired. Sign in again to publish.", "error");
+        openAuthDialog({ action: "review", opener: submit });
+      } else if (error.status === 403) {
+        showFormStatus(status, "This account does not have permission to publish a review.", "error");
+      } else if (isRateLimitError(error)) {
+        showFormStatus(status, error.message || "Review limit reached. Try again tomorrow.", "error");
+      } else {
+        showFormStatus(status, error.message || "The review could not be published. Try again.", "error");
+      }
+    } finally {
+      state.reviewSubmitting = false;
+      setButtonBusy(submit, false);
     }
   }
 
   function initReviewDialog() {
     const dialog = $("#reviewDialog");
     const form = $("#reviewForm");
-    const closeButton = $("#reviewDialogClose");
-    const nameInput = $("#reviewName");
-    const reviewInput = $("#reviewText");
     const ratingInput = $("#reviewRating");
     const starGroup = $("#starInput");
+    const reviewInput = $("#reviewText");
     const charCount = $("#reviewCharCount");
-    const stars = starGroup ? $$(".rating-star", starGroup) : [];
-    let opener = null;
-
     if (!dialog || !form) return;
 
-    const setRating = (value) => {
-      const rating = Math.min(5, Math.max(1, Number(value) || 5));
-      if (ratingInput) ratingInput.value = String(rating);
-      stars.forEach((star) => {
-        const starValue = Number(star.dataset.value);
-        star.classList.toggle("is-active", starValue <= rating);
-        star.setAttribute("aria-pressed", String(starValue === rating));
-      });
-    };
-
-    setRating(5);
-
-    const syncFormWithSelection = () => {
-      const romSelect = $("#reviewRom");
-      const rootSelect = $("#reviewRoot");
-      const buildInput = $("#reviewBuild");
-
-      if (romSelect) romSelect.value = state.rom === "AOSP" ? "AOSP / Custom ROM" : "HyperOS";
-      if (rootSelect) rootSelect.value = ROOT_LABELS[state.root] || "KowSU + SuSFS";
-      if (buildInput && (!buildInput.value.trim() || buildInput.value === "Latest stable")) {
-        buildInput.value = state.buildLabel;
-      }
-    };
-
-    const openDialog = (trigger) => {
-      opener = trigger || document.activeElement;
-      syncFormWithSelection();
-      setRating(Number(ratingInput?.value) || 5);
-      if (typeof dialog.showModal === "function") dialog.showModal();
-      else dialog.setAttribute("open", "");
-      document.body.classList.add("dialog-open");
-      window.setTimeout(() => nameInput?.focus({ preventScroll: true }), 60);
-    };
-
-    const closeDialog = () => {
-      if (typeof dialog.close === "function" && dialog.open) dialog.close();
-      else dialog.removeAttribute("open");
-      document.body.classList.remove("dialog-open");
-      if (opener && typeof opener.focus === "function") opener.focus({ preventScroll: true });
-    };
-
-    const writeButton = $("#writeReviewBtn");
-    if (writeButton) writeButton.addEventListener("click", () => openDialog(writeButton));
-
-    const reviewGrid = $("#reviewGrid");
-    if (reviewGrid) {
-      reviewGrid.addEventListener("click", (event) => {
-        if (!event.target.closest("#writeReviewEmptyBtn")) return;
-        openDialog(event.target.closest("#writeReviewEmptyBtn"));
-      });
-    }
-
-    if (closeButton) closeButton.addEventListener("click", closeDialog);
-
-    dialog.addEventListener("click", (event) => {
-      if (event.target === dialog) closeDialog();
-    });
-
-    dialog.addEventListener("close", () => {
-      document.body.classList.remove("dialog-open");
-    });
-
-    dialog.addEventListener("cancel", () => {
-      document.body.classList.remove("dialog-open");
-    });
-
-    stars.forEach((star) => {
-      star.addEventListener("click", () => setRating(star.dataset.value));
-    });
+    initDialogChrome(dialog, "#reviewDialogClose");
+    setReviewRating(Number(ratingInput && ratingInput.value) || 5);
 
     if (starGroup) {
+      $$(".rating-star", starGroup).forEach((star) => {
+        star.addEventListener("click", () => setReviewRating(star.dataset.value));
+      });
       starGroup.addEventListener("keydown", (event) => {
         if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
         event.preventDefault();
-        const current = Number(ratingInput?.value) || 5;
+        const current = Number(ratingInput && ratingInput.value) || 5;
         let next = current;
         if (event.key === "ArrowLeft") next = Math.max(1, current - 1);
         if (event.key === "ArrowRight") next = Math.min(5, current + 1);
         if (event.key === "Home") next = 1;
         if (event.key === "End") next = 5;
-        setRating(next);
-        const star = stars.find((item) => Number(item.dataset.value) === next);
+        setReviewRating(next);
+        const star = $$(".rating-star", starGroup).find((item) => Number(item.dataset.value) === next);
         if (star) star.focus();
       });
     }
 
-    if (reviewInput) {
-      const updateCount = () => {
-        if (charCount) charCount.textContent = String(reviewInput.value.length);
-      };
-      reviewInput.addEventListener("input", updateCount);
-      updateCount();
+    [
+      ["#reviewRom", "reviewRomTouched"],
+      ["#reviewRoot", "reviewRootTouched"]
+    ].forEach(([selector, stateKey]) => {
+      const select = $(selector);
+      if (select) {
+        select.addEventListener("change", () => {
+          state[stateKey] = true;
+        });
+      }
+    });
+
+    if (reviewInput && charCount) {
+      const update = () => { charCount.textContent = String(reviewInput.value.length); };
+      reviewInput.addEventListener("input", update);
+      update();
     }
 
-    form.addEventListener("submit", (event) => {
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      if (!form.reportValidity()) return;
+      if (state.reviewSubmitting) return;
+      if (!validateReviewForm()) return;
 
-      const name = nameInput?.value.trim() || "Rider";
-      const text = reviewInput?.value.trim() || "";
-      const rating = Number(ratingInput?.value) || 5;
-      const rom = $("#reviewRom")?.value || "HyperOS";
-      const root = $("#reviewRoot")?.value || "KowSU + SuSFS";
-      const build = $("#reviewBuild")?.value.trim() || state.buildLabel;
+      const text = reviewInput.value.trim();
+      const rating = Number(ratingInput && ratingInput.value) || 5;
+      const rom = ($("#reviewRom") && $("#reviewRom").value) || "Modded HyperOS";
+      const root = ($("#reviewRoot") && $("#reviewRoot").value) || "KowSU + SuSFS";
+      const buildValue = ($("#reviewBuild") && $("#reviewBuild").value.trim()) || "";
+      const build = !buildValue || buildValue === "Latest stable" ? state.buildLabel : buildValue;
 
-      if (!text || text.length < 20) {
-        showToast("Please write at least 20 characters so the review is useful.");
-        reviewInput?.focus();
+      if (state.communityMode === "supabase") {
+        if (!state.auth.session) {
+          showFormStatus($("#reviewStatus"), "Sign in with Google or GitHub to publish your review.", "info");
+          openAuthDialog({ action: "review", opener: $("#reviewSubmit") });
+          return;
+        }
+        await submitSupabaseReview({ rating, body: text, rom, root_flavor: root, build });
         return;
       }
 
+      const name = (($("#reviewName") && $("#reviewName").value) || "Rider")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, 32) || "Rider";
       if (!reviewConfig.owner || !reviewConfig.repo) {
-        showToast("Review repository is not configured. Update assets/js/config.js.");
+        showFormStatus($("#reviewStatus"), "Review repository is not configured. Update assets/js/config.js.", "error");
         return;
       }
 
@@ -1871,17 +3007,733 @@
         build
       ].join("\n");
 
-      const issueUrl = `https://github.com/${reviewConfig.owner}/${reviewConfig.repo}/issues/new`;
-      const query = new URLSearchParams({
+      openGitHubIssue({
         title: `${prefix} ${name}`.trim(),
-        body
+        body,
+        success: "GitHub opened. Submit the issue, then use Refresh wall."
       });
-
-      window.open(`${issueUrl}?${query.toString()}`, "_blank", "noopener,noreferrer");
-      closeDialog();
-      showToast("Opening GitHub. Submit the issue — the wall refreshes within 15 minutes.", 5500);
+      hideDialog(dialog);
     });
   }
+
+  function openGitHubIssue({ title, body, success }) {
+    const issueUrl = `https://github.com/${reviewConfig.owner}/${reviewConfig.repo}/issues/new`;
+    const safeTitle = String(title || "Kernel report").replace(/\s+/g, " ").trim().slice(0, 140);
+    const fullBody = String(body || "");
+    const makeUrl = (value) => {
+      const query = new URLSearchParams({ title: safeTitle, body: value });
+      return `${issueUrl}?${query.toString()}`;
+    };
+
+    let targetBody = fullBody;
+    let url = makeUrl(targetBody);
+    let shortened = false;
+
+    // GitHub rejects very long prefilled issue URLs (and the login redirect
+    // doubles the URL). Keep the open usable; copy the complete report first.
+    if (url.length > 4000) {
+      const notice = "\n\n---\n_GitHub's prefilled-issue URL limit shortened this report. The complete report was copied to your clipboard — paste it here before submitting._";
+      let low = 0;
+      let high = fullBody.length;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        const candidateBody = `${fullBody.slice(0, mid).trimEnd()}${notice}`;
+        if (makeUrl(candidateBody).length <= 4000) low = mid;
+        else high = mid - 1;
+      }
+      targetBody = `${fullBody.slice(0, low).replace(/\s+\S*$/, "").trimEnd()}${notice}`;
+      url = makeUrl(targetBody);
+      shortened = true;
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+
+    if (!shortened) {
+      showToast(success || "Opening GitHub. Submit the issue to publish it.", 5600);
+      return;
+    }
+
+    copyText(fullBody).then((copied) => {
+      showToast(
+        copied
+          ? "This report is long. GitHub opens a shortened copy; the complete report is on your clipboard. Paste it into the issue before submitting."
+          : "This report is long. GitHub opens a shortened copy. Paste the full report from the form before submitting.",
+        10000
+      );
+    });
+  }
+
+  function openBugDialog(trigger) {
+    const dialog = $("#bugDialog");
+    if (!dialog) return;
+    updateAuthUI();
+    clearFormStatus($("#bugStatus"));
+    const focus = state.communityMode === "supabase" && !state.auth.session
+      ? "[data-auth-trigger]"
+      : "#bugTitle";
+    showDialog(dialog, trigger, focus);
+  }
+
+  function validateBugForm() {
+    const form = $("#bugForm");
+    const title = $("#bugTitle");
+    const rom = $("#bugRom");
+    const description = $("#bugDescription");
+    const status = $("#bugStatus");
+    if (!form || !description) return false;
+    if (title && title.value.trim().length < 8) {
+      showFormStatus(status, "Give the report a short title of at least 8 characters.", "error");
+      title.focus();
+      return false;
+    }
+    if (rom && !rom.value.trim()) {
+      showFormStatus(status, "Name the modded ROM and version you are running.", "error");
+      rom.focus();
+      return false;
+    }
+    const text = description.value.trim();
+    if (text.length < 30) {
+      showFormStatus(status, "Describe the bug in at least 30 characters so it can be reproduced.", "error");
+      description.focus();
+      return false;
+    }
+    if (!form.reportValidity()) {
+      showFormStatus(status, "Check the highlighted fields, including the modded-ROM confirmation.", "error");
+      return false;
+    }
+    clearFormStatus(status);
+    return true;
+  }
+
+  async function submitSupabaseBug(payload) {
+    const status = $("#bugStatus");
+    const submit = $("#bugSubmit");
+    state.bugSubmitting = true;
+    setButtonBusy(submit, true, "Sending…");
+    clearFormStatus(status);
+    try {
+      await supabaseRequest(supabaseTable(state.supabase.bugsTable), {
+        method: "POST",
+        auth: true,
+        headers: { Prefer: "return=minimal" },
+        body: payload
+      });
+      const form = $("#bugForm");
+      if (form) form.reset();
+      const build = $("#bugBuild");
+      if (build) build.value = state.buildLabel;
+      const charCount = $("#bugCharCount");
+      if (charCount) charCount.textContent = "0";
+      clearDraft("bug");
+      hideDialog($("#bugDialog"));
+      showToast("Private bug report sent. Only you and the maintainer can read it.", 6000);
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+        showFormStatus(status, "Your session expired. Sign in again to send the report.", "error");
+        openAuthDialog({ action: "bug", opener: submit });
+      } else if (error.status === 403) {
+        showFormStatus(status, "This account does not have permission to send a report.", "error");
+      } else if (isRateLimitError(error)) {
+        showFormStatus(status, error.message || "Bug report limit reached. Try again tomorrow.", "error");
+      } else {
+        showFormStatus(status, error.message || "The report could not be sent. Try again.", "error");
+      }
+    } finally {
+      state.bugSubmitting = false;
+      setButtonBusy(submit, false);
+    }
+  }
+
+  function initBugDialog() {
+    const dialog = $("#bugDialog");
+    const form = $("#bugForm");
+    const description = $("#bugDescription");
+    const logs = $("#bugLogs");
+    const charCount = $("#bugCharCount");
+    if (!dialog || !form) return;
+
+    initDialogChrome(dialog, "#bugDialogClose");
+
+    if (description && charCount) {
+      const update = () => { charCount.textContent = String(description.value.length); };
+      description.addEventListener("input", update);
+      update();
+    }
+
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (state.bugSubmitting) return;
+      if (!validateBugForm()) return;
+
+      const buildValue = ($("#bugBuild") && $("#bugBuild").value.trim()) || "";
+      const payload = {
+        title: ($("#bugTitle") && $("#bugTitle").value.trim()) || "Kernel issue",
+        device: ($("#bugDevice") && $("#bugDevice").value) || "POCO F4 (munch)",
+        rom: ($("#bugRom") && $("#bugRom").value.trim()) || "",
+        root_flavor: ($("#bugRoot") && $("#bugRoot").value) || "KowSU + SuSFS",
+        build: !buildValue || buildValue === "Latest stable" ? state.buildLabel : buildValue,
+        description: description.value.trim(),
+        logs: (logs && logs.value.trim()) || ""
+      };
+
+      if (state.communityMode === "supabase") {
+        if (!state.auth.session) {
+          showFormStatus($("#bugStatus"), "Sign in with Google or GitHub to send a private report.", "info");
+          openAuthDialog({ action: "bug", opener: $("#bugSubmit") });
+          return;
+        }
+        await submitSupabaseBug(payload);
+        return;
+      }
+
+      const safeDescription = payload.description
+        .split(/\r?\n/)
+        .map((line) => (/^#{1,6}\s/.test(line) ? `> ${line}` : line))
+        .join("\n");
+      const fence = payload.logs.includes("```") ? "````" : "```";
+      const body = [
+        "### Device",
+        payload.device,
+        "",
+        "### ROM",
+        payload.rom,
+        "",
+        "### Root flavor",
+        payload.root_flavor,
+        "",
+        "### Build",
+        payload.build,
+        "",
+        "### What happened",
+        safeDescription,
+        "",
+        "### Logs",
+        payload.logs ? `${fence}text\n${payload.logs}\n${fence}` : "_No logs provided._",
+        "",
+        "### ROM check",
+        "- [x] Modded HyperOS, ColorOS port or AOSP-based custom ROM (not stock HyperOS)"
+      ].join("\n");
+
+      const prefix = communityConfig.bugTitlePrefix || "[Bug]";
+      openGitHubIssue({
+        title: `${prefix} ${payload.title}`.trim(),
+        body,
+        success: "GitHub opened. Submit the issue so the report reaches the tracker."
+      });
+      hideDialog(dialog);
+    });
+  }
+
+  function normaliseChatRow(row) {
+    if (!row || typeof row !== "object") return null;
+    return {
+      id: row.id || "",
+      user_id: row.user_id || "",
+      created_at: row.created_at || "",
+      author_name: truncate(String(row.author_name || "Rider"), 42),
+      author_avatar: safeHttpUrl(row.author_avatar || ""),
+      provider: String(row.provider || ""),
+      body: String(row.body || "")
+    };
+  }
+
+  function setChatStatus(label, tone) {
+    const status = $("#chatStatus");
+    if (!status) return;
+    const next = String(label);
+    if (status.textContent !== next) status.textContent = next;
+    status.classList.toggle("is-live", tone === "live");
+    status.classList.toggle("is-error", tone === "error");
+  }
+
+  function updateChatCount() {
+    const count = state.chat.messages.length;
+    const limit = state.supabase.chatLimit;
+    const suffix = count >= limit ? "+" : "";
+    const display = `${formatNumber(count)}${suffix}`;
+    setText("[data-chat-count]", display);
+    setTextNode($("#chatCount"), `${display} ${count === 1 ? "message" : "messages"}`);
+  }
+
+  function createChatMessage(message) {
+    const item = create("div", "chat-message");
+    if (state.auth.user && message.user_id === state.auth.user.id) item.classList.add("is-own");
+
+    const avatar = create("span", "chat-message-avatar");
+    const avatarUrl = safeHttpUrl(message.author_avatar || "");
+    if (avatarUrl) {
+      const image = document.createElement("img");
+      image.src = avatarUrl;
+      image.alt = "";
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.referrerPolicy = "no-referrer";
+      image.addEventListener("error", () => {
+        image.remove();
+        avatar.textContent = initialsFor(message.author_name);
+      }, { once: true });
+      avatar.appendChild(image);
+    } else {
+      avatar.textContent = initialsFor(message.author_name);
+    }
+    avatar.setAttribute("aria-hidden", "true");
+    item.appendChild(avatar);
+
+    const main = create("div", "chat-message-main");
+    const head = create("div", "chat-message-head");
+    head.appendChild(create("strong", "", message.author_name || "Rider"));
+    const time = document.createElement("time");
+    time.dateTime = message.created_at || "";
+    time.textContent = formatChatTime(message.created_at);
+    head.appendChild(time);
+    main.appendChild(head);
+    main.appendChild(create("div", "chat-message-body", message.body));
+    item.appendChild(main);
+    return item;
+  }
+
+  function renderChatEmpty() {
+    const body = $("#chatBody");
+    if (!body) return;
+    const empty = create("div", "chat-empty");
+    empty.appendChild(create("strong", "", "No messages yet."));
+    empty.appendChild(create("p", "", "Signed-in riders can start the conversation. Keep it useful, honest and kind."));
+    body.replaceChildren(empty);
+  }
+
+  function renderChatError() {
+    const body = $("#chatBody");
+    if (!body) return;
+    const empty = create("div", "chat-empty");
+    empty.appendChild(create("strong", "", "The chat is taking a pit stop."));
+    empty.appendChild(create("p", "", "The community backend did not answer. Telegram is still open for immediate help."));
+    const link = create("a", "text-link", "Open Telegram ");
+    const arrow = create("span", "", "↗");
+    arrow.setAttribute("aria-hidden", "true");
+    link.appendChild(arrow);
+    link.href = links.telegram || "https://t.me/Extremeplus_Support";
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    empty.appendChild(link);
+    body.replaceChildren(empty);
+  }
+
+  function renderChatMessages(messages, forceScroll = false) {
+    const body = $("#chatBody");
+    if (!body) return;
+    const previousScrollTop = body.scrollTop;
+    const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 130;
+    body.replaceChildren();
+    if (!messages.length) {
+      renderChatEmpty();
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    messages.forEach((message) => fragment.appendChild(createChatMessage(message)));
+    body.appendChild(fragment);
+    updateChatCount();
+    if (forceScroll || nearBottom) {
+      body.scrollTop = body.scrollHeight;
+    } else {
+      body.scrollTop = previousScrollTop;
+    }
+  }
+
+  function announceNewChatMessages(messages, previousIds) {
+    if (!state.chat.visible) return;
+    const fresh = messages.filter((message) => message.id && !previousIds.has(message.id));
+    if (!fresh.length) return;
+    const latest = fresh[fresh.length - 1];
+    const preview = truncate(latest.body.replace(/\s+/g, " ").trim(), 120);
+    const announcer = $("#chatAnnouncements");
+    if (!announcer) return;
+    announcer.textContent = fresh.length === 1
+      ? `New chat message from ${latest.author_name}: ${preview}`
+      : `${fresh.length} new chat messages. Latest from ${latest.author_name}: ${preview}`;
+  }
+
+  async function hydrateChat(silent = false) {
+    if (state.communityMode !== "supabase" || !state.supabaseReady || state.chat.loading) return;
+    state.chat.loading = true;
+    const body = $("#chatBody");
+    if (body) body.setAttribute("aria-busy", "true");
+    if (!state.chat.initialized) setChatStatus("Connecting…", "loading");
+    try {
+      const query = new URLSearchParams({
+        select: "id,user_id,created_at,author_name,author_avatar,provider,body",
+        order: "created_at.desc",
+        limit: String(state.supabase.chatLimit)
+      });
+      const rows = await supabaseRequest(supabaseTable(state.supabase.chatTable, query.toString()));
+      const messages = (Array.isArray(rows) ? rows : [])
+        .map(normaliseChatRow)
+        .filter(Boolean)
+        .reverse();
+      const firstLoad = !state.chat.initialized;
+      const previousIds = new Set(state.chat.messages.map((message) => message.id).filter(Boolean));
+      state.chat.messages = messages;
+      state.chat.initialized = true;
+      renderChatMessages(messages, firstLoad);
+      if (!firstLoad) announceNewChatMessages(messages, previousIds);
+      setChatStatus("Live", "live");
+      updateChatCount();
+    } catch (error) {
+      console.warn("EXTREME++: chat could not load.", error);
+      if (silent && state.chat.messages.length) {
+        setChatStatus("Reconnecting…", "error");
+      } else {
+        setChatStatus("Offline", "error");
+        renderChatError();
+        updateChatCount();
+      }
+    } finally {
+      state.chat.loading = false;
+      if (body) body.setAttribute("aria-busy", "false");
+    }
+  }
+
+  function startChatPolling() {
+    stopChatPolling();
+    if (state.communityMode !== "supabase" || !state.supabaseReady) return;
+    state.chat.pollTimer = window.setInterval(() => {
+      if (document.hidden || !state.chat.visible) return;
+      hydrateChat(true);
+    }, state.supabase.chatPollMs);
+  }
+
+  function stopChatPolling() {
+    window.clearInterval(state.chat.pollTimer);
+    state.chat.pollTimer = 0;
+  }
+
+  async function sendChatMessage() {
+    if (state.chat.sending) return;
+    const input = $("#chatInput");
+    const form = $("#chatForm");
+    const send = $("#chatSend");
+    if (!input || !form) return;
+    if (!state.auth.session) {
+      openAuthDialog({ action: "chat", opener: send });
+      return;
+    }
+    const message = input.value.trim();
+    if (!message) {
+      showToast("Write a message before sending.", 3200);
+      input.focus();
+      return;
+    }
+    if (message.length > 500) {
+      showToast("Keep chat messages under 500 characters.", 4200);
+      return;
+    }
+
+    state.chat.sending = true;
+    if (send) {
+      send.disabled = true;
+      send.setAttribute("aria-busy", "true");
+    }
+    try {
+      const rows = await supabaseRequest(supabaseTable(state.supabase.chatTable), {
+        method: "POST",
+        auth: true,
+        headers: { Prefer: "return=representation" },
+        body: { body: message }
+      });
+      const row = Array.isArray(rows) ? rows[0] : rows;
+      const saved = normaliseChatRow(row);
+      if (saved) {
+        state.chat.messages.push(saved);
+        renderChatMessages(state.chat.messages, true);
+        updateChatCount();
+      } else {
+        await hydrateChat(true);
+      }
+      input.value = "";
+      const count = $("#chatCharCount");
+      if (count) count.textContent = "0";
+      clearDraft("chat");
+      setChatStatus("Live", "live");
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+        showToast("Your session expired. Sign in again to chat.", 5200);
+        openAuthDialog({ action: "chat", opener: send });
+      } else if (error.status === 403) {
+        showToast("This account cannot post to the chat right now.", 5200);
+      } else if (isRateLimitError(error)) {
+        showToast(error.message || "Chat is rate-limited. Wait a moment and try again.", 5200);
+      } else {
+        showToast(error.message || "The message could not be sent. Try again.", 5200);
+      }
+    } finally {
+      state.chat.sending = false;
+      if (send) {
+        send.disabled = false;
+        send.removeAttribute("aria-busy");
+      }
+    }
+  }
+
+  function initChat() {
+    if (state.communityMode !== "supabase") return;
+    const form = $("#chatForm");
+    const input = $("#chatInput");
+    const charCount = $("#chatCharCount");
+    const section = $("#communityChat");
+    if (!form || !input) return;
+
+    const updateCount = () => {
+      if (charCount) charCount.textContent = String(input.value.length);
+    };
+    input.addEventListener("input", updateCount);
+    updateCount();
+    updateChatCount();
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      sendChatMessage();
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.shiftKey || event.isComposing) return;
+      event.preventDefault();
+      if (typeof form.requestSubmit === "function") form.requestSubmit();
+      else sendChatMessage();
+    });
+
+    const setVisible = (visible) => {
+      state.chat.visible = visible;
+      if (visible && !state.chat.initialized) hydrateChat(true);
+    };
+
+    if (section && "IntersectionObserver" in window) {
+      const observer = new IntersectionObserver((entries) => {
+        setVisible(Boolean(entries[0] && entries[0].isIntersecting));
+      }, { rootMargin: "240px 0px" });
+      observer.observe(section);
+    } else {
+      state.chat.visible = true;
+    }
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopChatPolling();
+      } else {
+        startChatPolling();
+        if (state.chat.visible) hydrateChat(true);
+      }
+    });
+
+    hydrateChat(true);
+    startChatPolling();
+  }
+
+  function handleAuthTrigger(trigger) {
+    if (state.communityMode !== "supabase") {
+      showToast("On-site accounts are not configured. Use GitHub issues or Telegram.", 5600);
+      return;
+    }
+    const action = trigger.dataset.authAction || "";
+    const provider = trigger.dataset.authProviderButton || "";
+    if (state.auth.session) {
+      if (action === "chat") {
+        scrollToSection("community");
+        window.setTimeout(focusChatInput, 380);
+      } else if (action === "review") {
+        openReviewDialog(trigger);
+      } else if (action === "bug") {
+        openBugDialog(trigger);
+      } else {
+        openAuthDialog({ opener: trigger });
+      }
+      return;
+    }
+    if (provider) {
+      state.auth.pendingAction = action;
+      beginOAuth(provider, action);
+      return;
+    }
+    openAuthDialog({ action, opener: trigger });
+  }
+
+  function initCommunityActions() {
+    document.addEventListener("click", (event) => {
+      const target = event.target instanceof Element ? event.target : null;
+      if (!target) return;
+
+      const authTrigger = target.closest("[data-auth-trigger]");
+      if (authTrigger) {
+        event.preventDefault();
+        if (typeof state.closeMobileMenu === "function") state.closeMobileMenu();
+        handleAuthTrigger(authTrigger);
+        return;
+      }
+
+      const refreshTrigger = target.closest("[data-refresh-reviews]");
+      if (refreshTrigger) {
+        event.preventDefault();
+        refreshReviewWall(refreshTrigger);
+        return;
+      }
+
+      const reviewTrigger = target.closest("[data-open-review]");
+      if (reviewTrigger) {
+        event.preventDefault();
+        if (typeof state.closeMobileMenu === "function") state.closeMobileMenu();
+        openReviewDialog(reviewTrigger);
+        return;
+      }
+
+      const bugTrigger = target.closest("[data-open-bug]");
+      if (bugTrigger) {
+        event.preventDefault();
+        if (typeof state.closeMobileMenu === "function") state.closeMobileMenu();
+        openBugDialog(bugTrigger);
+      }
+    });
+  }
+
+  /* =========================================================
+     Community drafts (local only)
+     ========================================================= */
+
+  function draftKey(name) {
+    return `${DRAFT_PREFIX}${name}`;
+  }
+
+  function readDraft(name) {
+    const raw = storageGet(draftKey(name));
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || !parsed.data) return null;
+      if (Date.now() - Number(parsed.ts || 0) > 7 * 24 * 60 * 60 * 1000) {
+        storageRemove(draftKey(name));
+        return null;
+      }
+      return parsed.data;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function writeDraft(name, data) {
+    storageSet(draftKey(name), JSON.stringify({ ts: Date.now(), data }));
+  }
+
+  function clearDraft(name) {
+    storageRemove(draftKey(name));
+    const selectors = { review: "#reviewForm", bug: "#bugForm", chat: "#chatForm" };
+    const form = selectors[name] ? $(selectors[name]) : null;
+    if (form) delete form.dataset.draftDirty;
+  }
+
+  function persistDraftsNow() {
+    [
+      ["review", "#reviewForm"],
+      ["bug", "#bugForm"],
+      ["chat", "#chatForm"]
+    ].forEach(([name, selector]) => {
+      const form = $(selector);
+      if (form && form.dataset.draftDirty === "true") {
+        writeDraft(name, serialiseForm(form));
+      }
+    });
+  }
+
+  function serialiseForm(form) {
+    const data = {};
+    Array.from(form.elements).forEach((field) => {
+      if (!field.name || field.disabled) return;
+      if (field.type === "checkbox") {
+        data[field.name] = field.checked;
+      } else if (field.type === "radio") {
+        if (field.checked) data[field.name] = field.value;
+      } else {
+        data[field.name] = field.value;
+      }
+    });
+    return data;
+  }
+
+  function applyFormDraft(form, data) {
+    if (!form || !data) return;
+    Object.entries(data).forEach(([name, value]) => {
+      const field = form.elements.namedItem(name);
+      if (!field) return;
+      if (field.type === "checkbox") {
+        field.checked = Boolean(value);
+        return;
+      }
+      if (field.tagName === "SELECT") {
+        const exists = Array.from(field.options).some((option) => option.value === value);
+        if (!exists) return;
+      }
+      field.value = value;
+    });
+  }
+
+  function initDrafts() {
+    [
+      { name: "review", form: $("#reviewForm") },
+      { name: "bug", form: $("#bugForm") },
+      { name: "chat", form: $("#chatForm") }
+    ].forEach(({ name, form }) => {
+      if (!form) return;
+      const draft = readDraft(name);
+      if (draft) {
+        applyFormDraft(form, draft);
+        form.dataset.draftDirty = "true";
+      }
+      if (name === "review" && draft) {
+        state.reviewRomTouched = true;
+        state.reviewRootTouched = true;
+      }
+      if (name === "review") setReviewRating(Number($("#reviewRating") && $("#reviewRating").value) || 5);
+      if (name === "review" && $("#reviewText")) {
+        const count = $("#reviewCharCount");
+        if (count) count.textContent = String($("#reviewText").value.length);
+      }
+      if (name === "bug" && $("#bugDescription")) {
+        const count = $("#bugCharCount");
+        if (count) count.textContent = String($("#bugDescription").value.length);
+      }
+      if (name === "chat" && $("#chatInput")) {
+        const count = $("#chatCharCount");
+        if (count) count.textContent = String($("#chatInput").value.length);
+      }
+
+      let timer = 0;
+      const scheduleSave = () => {
+        window.clearTimeout(timer);
+        timer = window.setTimeout(() => writeDraft(name, serialiseForm(form)), 320);
+      };
+      form.addEventListener("input", () => {
+        form.dataset.draftDirty = "true";
+        scheduleSave();
+      });
+      form.addEventListener("change", () => {
+        form.dataset.draftDirty = "true";
+        writeDraft(name, serialiseForm(form));
+      });
+    });
+  }
+
+  function initCommunitySupport() {
+    normaliseSupabaseConfig();
+    updateAuthUI();
+    initCommunityActions();
+    initAuthDialog();
+    initReviewDialog();
+    initBugDialog();
+    initChat();
+    initDrafts();
+    initAuth();
+  }
+
 
   /* =========================================================
      Service worker
@@ -1904,6 +3756,7 @@
     const year = $("#currentYear");
     if (year) year.textContent = String(new Date().getFullYear());
 
+    initTheme();
     captureReviewEmptyState();
     initHeader();
     initMobileMenu();
@@ -1917,7 +3770,7 @@
     initInstallTabs();
     initCopyButtons();
     initDownloads();
-    initReviewDialog();
+    initCommunitySupport();
     registerServiceWorker();
 
     hydrateGitHub();

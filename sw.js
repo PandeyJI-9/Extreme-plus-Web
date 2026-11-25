@@ -4,7 +4,7 @@
    clients pick up the new CSS, JS and data files.
    ============================================================ */
 
-const SW_VERSION = "v1";
+const SW_VERSION = "v3";
 const CACHE_NAME = `extreme-plus-static-${SW_VERSION}`;
 const BASE_URL = new URL("./", self.location.href).href;
 const INDEX_URL = new URL("index.html", BASE_URL).href;
@@ -87,7 +87,8 @@ async function networkFirstNavigation(request) {
   try {
     const response = await fetch(request);
     if (response && response.ok) {
-      await cache.put(INDEX_URL, response.clone());
+      // A cache write must never hide a fresh page from the user.
+      await cache.put(INDEX_URL, response.clone()).catch(() => {});
     }
     return response;
   } catch (error) {
@@ -115,9 +116,9 @@ async function staleWhileRevalidate(event) {
   const cached = await cache.match(request, { ignoreVary: true });
 
   const network = fetch(request)
-    .then((response) => {
+    .then(async (response) => {
       if (response && response.ok) {
-        cache.put(request, response.clone());
+        await cache.put(request, response.clone()).catch(() => {});
       }
       return response;
     })

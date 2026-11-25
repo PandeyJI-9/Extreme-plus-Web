@@ -1,7 +1,7 @@
 {
   "name": "PROJECT EXTREME++ — Munch Kernel",
   "short_name": "EXTREME++",
-  "description": "The BMW Edition custom kernel for POCO F4 and Redmi K40S. HyperOS and AOSP builds, live downloads, changelog and community reviews.",
+  "description": "The BMW Edition custom kernel for POCO F4 and Redmi K40S. Modded HyperOS, ColorOS port and AOSP builds, live downloads, changelog and community reviews.",
   "id": "./",
   "start_url": "./",
   "scope": "./",
@@ -36,7 +36,7 @@
       "name": "Download the latest kernel",
       "short_name": "Downloads",
       "url": "./#downloads",
-      "description": "Match a HyperOS or AOSP build to your root flavor"
+      "description": "Match a modded HyperOS or AOSP build to your root flavor"
     },
     {
       "name": "Read the changelog",
