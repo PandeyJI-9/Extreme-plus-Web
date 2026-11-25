@@ -1,4 +1,6 @@
 User-agent: *
 Allow: /
+Disallow: /admin.html
+Disallow: /profile.html
 
 Sitemap: https://pandeyji-9.github.io/Extreme-plus-Web/sitemap.xml

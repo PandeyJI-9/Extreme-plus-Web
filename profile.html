@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js" data-community="supabase">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#06070b" id="themeColorMeta">
+  <title>Community profile — PROJECT EXTREME++</title>
+  <meta name="description" content="Public PROJECT EXTREME++ community profile. Reviews and chat activity are shown without private account details.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="./assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./assets/img/app-icon-180.png">
+  <link rel="manifest" href="./site.webmanifest">
+  <link rel="preload" href="./assets/fonts/anton-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/jetbrains-mono-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      root.classList.remove("no-js");
+      root.classList.add("js");
+      var theme = "dark";
+      try {
+        var stored = window.localStorage.getItem("extreme_plus_theme");
+        if (stored === "light" || stored === "dark") theme = stored;
+        else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+      } catch (error) {}
+      root.setAttribute("data-theme", theme);
+      root.style.colorScheme = theme;
+      var meta = document.getElementById("themeColorMeta");
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f3f5fa" : "#06070b");
+    })();
+  </script>
+  <link rel="stylesheet" href="./assets/css/style.css">
+  <link rel="stylesheet" href="./assets/css/profile.css">
+</head>
+<body class="profile-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-grain" aria-hidden="true"></div>
+
+  <header class="profile-header">
+    <div class="container profile-header-inner">
+      <a class="profile-brand" href="./" aria-label="PROJECT EXTREME++ home">
+        <span class="profile-brand-mark" aria-hidden="true">EX++</span>
+        <span>PROJECT EXTREME++</span>
+      </a>
+      <div class="profile-header-actions">
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false">
+          <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.1" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M18.5 5.5 17 7M7 17l-1.5 1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.2 15.1A8.3 8.3 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        </button>
+        <a class="button button--ghost" href="./#community">Community <span class="button-arrow" aria-hidden="true">→</span></a>
+      </div>
+    </div>
+  </header>
+
+  <main class="profile-main container" id="main" tabindex="-1">
+    <div class="profile-state" id="profileLoading">
+      <span class="section-kicker">Community profile</span>
+      <p>Loading public profile…</p>
+    </div>
+
+    <div class="profile-state profile-state--error" id="profileError" hidden>
+      <span class="section-kicker">Profile unavailable</span>
+      <h1>The garage cannot find this rider.</h1>
+      <p id="profileErrorText">Check the username or return to the community.</p>
+      <a class="button button--primary" href="./#community">Back to the community <span class="button-arrow" aria-hidden="true">→</span></a>
+    </div>
+
+    <div class="profile-view" id="profileCard" hidden>
+      <section class="profile-hero reveal" aria-labelledby="profileName">
+        <div class="profile-identity">
+          <span class="profile-avatar" data-profile-avatar aria-hidden="true"></span>
+          <div class="profile-copy">
+            <span class="section-kicker">Rider profile</span>
+            <h1 id="profileName" data-profile-name>Rider</h1>
+            <p class="profile-handle">@<span data-profile-username>rider</span></p>
+            <div class="profile-badges">
+              <span class="profile-provider" data-profile-provider>Community</span>
+              <span class="profile-online" data-profile-online><i aria-hidden="true"></i> Offline</span>
+            </div>
+          </div>
+        </div>
+        <p class="profile-bio" data-profile-bio>No bio yet.</p>
+        <div class="profile-hero-foot">
+          <span data-profile-joined>Joined recently</span>
+          <div class="profile-actions">
+            <a class="button button--ghost" id="profileSignIn" href="./#community" hidden>Sign in to edit</a>
+            <button class="button button--primary" id="editProfile" type="button" hidden>
+              Edit profile <span class="button-arrow" aria-hidden="true">→</span>
+            </button>
+          </div>
+        </div>
+        <p class="profile-avatar-note">Avatars come from the connected Google or GitHub account. Uploads are disabled to keep storage lean.</p>
+      </section>
+
+      <section class="profile-stats reveal" aria-label="Public activity">
+        <div><span data-profile-reviews>0</span><small>Published reviews</small></div>
+        <div><span data-profile-chat>0</span><small>Chat messages</small></div>
+        <div><span data-profile-joined-stat>—</span><small>Member since</small></div>
+      </section>
+
+      <div class="profile-columns">
+        <section class="profile-panel reveal" aria-labelledby="profileReviewsTitle">
+          <div class="profile-panel-head">
+            <span class="section-kicker">Build log</span>
+            <h2 id="profileReviewsTitle">Recent reviews</h2>
+          </div>
+          <div id="profileRecentReviews" class="profile-feed"></div>
+        </section>
+        <section class="profile-panel reveal" aria-labelledby="profileChatTitle">
+          <div class="profile-panel-head">
+            <span class="section-kicker">Garage chat</span>
+            <h2 id="profileChatTitle">Recent messages</h2>
+          </div>
+          <div id="profileRecentChat" class="profile-feed"></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <dialog class="review-dialog profile-dialog" id="editProfileDialog" aria-labelledby="editProfileTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="editProfileClose" type="button" aria-label="Close profile editor">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Public identity</span>
+      <h2 id="editProfileTitle">Shape your <span class="text-gradient">profile.</span></h2>
+      <p class="dialog-lede">Your display name, username and bio are public. Your email and private bug reports stay private.</p>
+      <form class="review-form" id="profileForm" novalidate>
+        <div class="form-field">
+          <label for="profileDisplayName">Display name</label>
+          <input id="profileDisplayName" name="displayName" type="text" maxlength="60" autocomplete="name" required>
+        </div>
+        <div class="form-field">
+          <label for="profileUsername">Username</label>
+          <input id="profileUsername" name="username" type="text" minlength="3" maxlength="20" pattern="[A-Za-z0-9_]{3,20}" autocomplete="username" spellcheck="false" required>
+          <span class="field-hint">3–20 letters, numbers or underscores. Case-insensitive. Changeable once every 30 days.</span>
+        </div>
+        <div class="form-field">
+          <label for="profileBio">Short bio <span class="label-optional">optional</span></label>
+          <textarea id="profileBio" name="bio" rows="4" maxlength="300" placeholder="ROM, device, kernel setup, or what you are testing."></textarea>
+          <span class="field-hint"><span id="profileBioCount">0</span> / 300</span>
+        </div>
+        <p class="form-status" id="profileStatus" hidden></p>
+        <button class="button button--primary button--full" id="profileSave" type="submit"><span>Save profile</span></button>
+        <button class="button button--ghost button--full" id="profileCancel" type="button">Cancel</button>
+        <p class="form-note">Usernames are unique. Reserved names and impersonation are blocked by the server.</p>
+      </form>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="./assets/js/config.js" defer></script>
+  <script src="./assets/js/community-client.js" defer></script>
+  <script src="./assets/js/profile.js" defer></script>
+</body>
+</html>

@@ -1031,12 +1031,17 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code></pre>
           </div>
           <div class="community-pulse reveal" data-delay="1" role="group" aria-label="Community activity">
             <span class="community-pulse-label">COMMUNITY PULSE</span>
-            <div class="community-pulse-grid">
-              <div><span data-stars>—</span><small>GitHub stars</small></div>
-              <div><span data-review-count>0</span><small>Published reviews</small></div>
-              <div data-supabase-only><span data-chat-count>—</span><small>Chat messages</small></div>
+            <div class="community-pulse-grid community-pulse-grid--stats">
+              <div data-supabase-only><span data-stat="members">—</span><small>Members</small></div>
+              <div data-supabase-only><span data-stat="online">—</span><small>Online now</small></div>
+              <div data-supabase-only><span data-stat="visits">—</span><small>Visits</small></div>
+              <div data-supabase-only><span data-stat="logins">—</span><small>Sign-ins</small></div>
+              <div><span data-stat="reviews">0</span><small>Published reviews</small></div>
+              <div data-supabase-only><span data-stat="chat">—</span><small>Chat messages</small></div>
+              <div data-github-only><span data-stars>—</span><small>GitHub stars</small></div>
             </div>
             <span class="community-pulse-status"><i aria-hidden="true"></i> Telegram support group</span>
+            <small class="community-pulse-note" data-supabase-only>Anonymous aggregate counts. No emails, names, IPs or user IDs are shown.</small>
           </div>
         </div>
 
@@ -1048,7 +1053,7 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code></pre>
                 <h3 id="chatTitle">Talk to the garage</h3>
               </div>
               <div class="chat-head-meta">
-                <span class="chat-status" id="chatStatus" role="status">Connecting…</span>
+                <span class="chat-status" id="chatStatus">Connecting…</span>
                 <span class="chat-count" id="chatCount">— messages</span>
               </div>
             </div>
@@ -1446,7 +1451,7 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code></pre>
           <span class="field-hint"><span id="reviewCharCount">0</span> / 1200</span>
         </div>
 
-        <p class="form-status" id="reviewStatus" role="status" hidden></p>
+        <p class="form-status" id="reviewStatus" hidden></p>
 
         <button class="button button--primary button--full" id="reviewSubmit" type="submit">
           <span data-review-submit-label>Continue on GitHub</span>
@@ -1532,7 +1537,7 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code></pre>
           <span>I am running a modded HyperOS, ColorOS port or AOSP-based custom ROM — not stock HyperOS.</span>
         </label>
 
-        <p class="form-status" id="bugStatus" role="status" hidden></p>
+        <p class="form-status" id="bugStatus" hidden></p>
 
         <button class="button button--primary button--full" id="bugSubmit" type="submit">
           <span data-bug-submit-label>Continue on GitHub</span>
@@ -1588,11 +1593,37 @@ cat /sys/class/kgsl/kgsl-3d0/gpu_available_frequencies</code></pre>
 
       <div class="auth-actions" data-auth-signed-in hidden>
         <button class="button button--primary button--full" type="button" data-auth-continue>Continue</button>
+        <a class="button button--ghost button--full" data-auth-profile hidden href="./profile.html">View my profile <span class="button-arrow" aria-hidden="true">→</span></a>
+        <a class="button button--ghost button--full" data-auth-admin hidden href="./admin.html">Moderation dashboard <span class="button-arrow" aria-hidden="true">↗</span></a>
         <button class="button button--ghost button--full" type="button" id="authSignOut">Sign out</button>
       </div>
 
-      <p class="form-status" id="authStatus" role="status" hidden></p>
+      <p class="form-status" id="authStatus" hidden></p>
       <p class="form-note">By continuing you agree to the house rules: be useful, be honest, be kind.</p>
+    </div>
+  </dialog>
+
+  <dialog class="review-dialog report-dialog" id="reportDialog" aria-labelledby="reportDialogTitle">
+    <div class="review-dialog-shell">
+      <button class="dialog-close" id="reportDialogClose" type="button" aria-label="Close report form">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </button>
+      <span class="section-kicker">Community safety</span>
+      <h2 id="reportDialogTitle">Flag <span class="text-gradient">a problem.</span></h2>
+      <p class="dialog-lede">Reports go to the moderation team only. Give a short, specific reason so the content can be reviewed quickly.</p>
+      <div class="report-preview" id="reportPreview" hidden></div>
+      <form class="review-form" id="reportForm" novalidate>
+        <input type="hidden" id="reportTargetType" name="targetType">
+        <input type="hidden" id="reportTargetId" name="targetId">
+        <div class="form-field">
+          <label for="reportReason">What is wrong?</label>
+          <textarea id="reportReason" name="reason" rows="4" minlength="5" maxlength="500" placeholder="e.g. Harassment, spam, scam link, personal information..." required></textarea>
+          <span class="field-hint"><span id="reportCharCount">0</span> / 500</span>
+        </div>
+        <p class="form-status" id="reportStatus" hidden></p>
+        <button class="button button--primary button--full" id="reportSubmit" type="submit"><span>Send report</span></button>
+        <p class="form-note">False or abusive reports can also be moderated. Reports are private.</p>
+      </form>
     </div>
   </dialog>
 

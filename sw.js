@@ -4,7 +4,7 @@
    clients pick up the new CSS, JS and data files.
    ============================================================ */
 
-const SW_VERSION = "v3";
+const SW_VERSION = "v5";
 const CACHE_NAME = `extreme-plus-static-${SW_VERSION}`;
 const BASE_URL = new URL("./", self.location.href).href;
 const INDEX_URL = new URL("index.html", BASE_URL).href;
@@ -12,9 +12,16 @@ const scopeUrl = (path) => new URL(path, BASE_URL).href;
 
 const CORE_ASSETS = [
   "index.html",
+  "profile.html",
+  "admin.html",
   "assets/css/style.css",
+  "assets/css/profile.css",
+  "assets/css/admin.css",
   "assets/js/config.js",
   "assets/js/app.js",
+  "assets/js/community-client.js",
+  "assets/js/profile.js",
+  "assets/js/admin.js",
   "assets/data/reviews.js",
   "assets/fonts/anton-latin.woff2",
   "assets/fonts/inter-latin-variable.woff2",
@@ -87,12 +94,14 @@ async function networkFirstNavigation(request) {
   try {
     const response = await fetch(request);
     if (response && response.ok) {
-      // A cache write must never hide a fresh page from the user.
-      await cache.put(INDEX_URL, response.clone()).catch(() => {});
+      // Cache each page under its own URL. Caching every navigation as the
+      // index would make /profile.html overwrite the offline home page.
+      await cache.put(request, response.clone()).catch(() => {});
     }
     return response;
   } catch (error) {
     return (
+      (await cache.match(request, { ignoreVary: true })) ||
       (await cache.match(INDEX_URL, { ignoreVary: true })) ||
       (await cache.match(BASE_URL, { ignoreVary: true })) ||
       new Response(OFFLINE_PAGE, {

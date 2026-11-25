@@ -12,6 +12,9 @@ Pure HTML, CSS and vanilla JavaScript. No framework, no bundler and no npm build
 - Smart download matcher for modded HyperOS / AOSP and KowSU + SuSFS / clean KernelSU / No Root
 - Live changelog from GitHub releases, with verified static fallback entries
 - On-site community: Google/GitHub sign-in, public reviews, private bug reports and general chat
+- Public community profiles, report buttons, posting-only bans, configurable slow mode and an aggregate community pulse
+- Noindex owner/admin console at `admin.html` for reports, content removal, bans, private bug reports, staff management, settings and the moderation audit log
+- Privacy-first analytics: anonymous visitor IDs, daily server-side hashes and aggregate counts only — no IP addresses, emails or third-party trackers
 - Graceful GitHub fallback: reviews and bug reports become prefilled issues, and chat points to Telegram / Discussions. GitHub has a prefilled-issue URL limit, so an unusually long bug report opens a shortened issue and copies the complete report to the clipboard for pasting
 - Review wall merges on-site Supabase reviews, curated reviews and existing `[Review]` GitHub issues
 - Installation tabs, verification commands, FAQ, Telegram support and a PWA offline shell
@@ -104,13 +107,25 @@ The site talks to Supabase Auth and PostgREST directly. There is no runtime SDK,
 
 ### 1. Create the project
 
-Create a free Supabase project, then open **SQL Editor** and run the contents of [`supabase/schema.sql`](supabase/schema.sql). The file creates:
+Create a free Supabase project, then open **SQL Editor** and run these files in order:
 
-- `public.reviews` — public, signed-in reviews
-- `public.bug_reports` — private reports visible to the author and community admins
-- `public.chat_messages` — public, signed-in chat
-- `public.community_admins` — optional on-site moderator allowlist
-- RLS policies, trusted author metadata, basic rate limits and API grants
+1. [`supabase/schema.sql`](supabase/schema.sql) — base tables, trusted author metadata, RLS and grants.
+2. [`supabase/migrations/20261125_community_moderation.sql`](supabase/migrations/20261125_community_moderation.sql) — profiles, roles, reports, bans, audit log, slow-mode settings, public stats and owner analytics.
+3. [`supabase/migrations/20261125_fix_track_visit_digest.sql`](supabase/migrations/20261125_fix_track_visit_digest.sql) — uses the `extensions.digest` function on hosted Supabase projects.
+4. [`supabase/migrations/20261125_fix_admin_delete_audit.sql`](supabase/migrations/20261125_fix_admin_delete_audit.sql) — makes the admin-removal audit path DELETE-safe.
+
+The migration creates:
+
+- `public.community_profiles` — one public profile per auth user, with a unique case-insensitive username
+- `public.community_admins` — owner/admin allowlist; the base table is upgraded with a `role` column
+- `public.community_bans` — posting-only bans with optional expiry
+- `public.community_reports` — private content reports and moderation state
+- `public.community_moderation_log` — append-only audit trail
+- `public.community_settings` — live rate limits and chat slow mode
+- `public.site_visits` and `public.community_login_events` — privacy-preserving aggregate analytics
+- RPCs for profiles, roles, heartbeat, visits, reports, bans, public stats and owner stats
+
+Run the migration only once. It is written to be safe when applied to the base schema.
 
 ### 2. Enable Google and GitHub
 
@@ -163,20 +178,36 @@ Local token files, `.env` files, private keys and credential JSON files are igno
 
 After redeploying, the header account button appears, the chat shell replaces the fallback, and reviews start using the on-site wall.
 
-### 5. Optional: read bug reports on-site
+### 5. Assign the owner
 
-The developer can always read every bug report through the Supabase dashboard because the dashboard uses a service role. To allow the signed-in developer account to read them through the API as well:
+The site deliberately does **not** auto-promote the first account. After deployment:
 
-1. Sign in to the site once with the developer account.
-2. Run this in the Supabase SQL editor, replacing the email:
+1. Sign in to the live site once with the GitHub account that should own the community.
+2. Open the Supabase SQL Editor and inspect the account:
 
 ```sql
-insert into public.community_admins (user_id, note)
-select id, 'developer'
-from auth.users
-where email = 'you@example.com'
-on conflict (user_id) do nothing;
+select u.id, u.email, u.created_at, p.username
+from auth.users u
+left join public.community_profiles p on p.user_id = u.id
+order by u.created_at desc;
 ```
+
+3. Assign the owner using the UUID from that result:
+
+```sql
+insert into public.community_admins (user_id, role, note)
+values ('<auth-user-uuid>', 'owner', 'site owner')
+on conflict (user_id) do update
+set role = 'owner',
+    note = excluded.note,
+    updated_at = now();
+```
+
+Using the UUID avoids problems when the provider keeps the email private. Do not promote the first user automatically, and do not paste a `service_role` key into the site.
+
+4. Open `admin.html`. The owner can add admins by username, change slow mode and limits, read private bug reports and view daily analytics. Admins can handle reports, remove content, ban members, read private bug reports and view the audit log.
+
+Only the owner can add/remove admins or change settings. The owner account cannot be banned, the last owner cannot be removed, and admins cannot ban other admins.
 
 ### How the community behaves
 
@@ -185,7 +216,9 @@ on conflict (user_id) do nothing;
 | Reviews | Read only; prompted to sign in | Public review, instant publish | Prefilled GitHub issue |
 | Bug reports | No access; sign-in required to report | Private report to developer/admins | Prefilled GitHub issue (public) |
 | General chat | Read only; sign-in gate | Public chat messages, 8-second polling | Telegram / Discussions cards |
-| Account | Header sign-in button | Profile, provider badge and sign-out | Hidden |
+| Reports | Sign-in required | Private report, limited per day | Not available |
+| Account | Header sign-in button | Public profile, provider badge and sign-out | Hidden |
+| Moderation | — | Owner/admin console at `admin.html` | — |
 
 Auth uses Supabase’s OAuth redirect flow. The access token is refreshed in the browser and the session is stored in `localStorage` under `extreme_plus_auth_v1`. The site never sees a password. OAuth callbacks must match a short-lived local sign-in state, so unsolicited tokens in a URL are rejected before a session is stored.
 
@@ -194,10 +227,34 @@ RLS rules:
 - Reviews and chat are publicly readable; inserts require `auth.uid() = user_id`.
 - Bug reports are readable only by their author or a community admin.
 - Author names, avatars and providers come from `auth.users`; timestamps and new bug status are set by a trigger, not trusted from the browser. New bug reports are forced to `open`.
-- Basic limits: 2 reviews per 24 hours, 5 bug reports per 24 hours, and one chat message every 5 seconds / 40 per hour.
-- Users cannot update or delete rows from the browser. Moderate through the Supabase dashboard.
+- Reports are readable by the reporter and admins. Bans and the audit log are admin-only.
+- Profile reads happen through the `community_get_profile` RPC; direct table reads are admin-only.
+- Posting bans block new reviews, chat messages, bug reports and reports. Banned members can still sign in and read.
+- Users cannot update or delete content from the browser. Moderation goes through the owner/admin console or the Supabase dashboard.
 
-To change limits, edit `public.enforce_community_rate_limit()` in `supabase/schema.sql` and rerun that function definition. To moderate content, delete or hide rows in the Supabase table editor. If you want an on-site moderation UI later, add an admin-only policy and screen; the current site intentionally keeps moderation out of the public client.
+### Profiles, analytics and privacy
+
+- Every auth user gets a unique username such as `rider_a1b2c3`. Usernames are 3–20 characters (`A-Z`, `a-z`, `0-9`, `_`), case-insensitive, and can be changed once every 30 days. Reserved names are blocked.
+- Profiles show display name, bio, provider, join date, online state and the latest public reviews/chat. There are no avatar uploads; the site downsizes OAuth provider avatars and falls back to initials.
+- Online means a profile heartbeat in the last 15 minutes. The page sends a heartbeat every 60 seconds while visible.
+- Visits use a random `localStorage` visitor ID. The database stores a SHA-256 hash scoped to the current day, deduplicates the same path for 30 minutes, and never stores an IP address.
+- Public stats show aggregate members, online now, visits, sign-ins, reviews and chat counts. Daily/weekly detail and top paths are owner-only.
+- The owner console is `noindex`; profile pages are `noindex` too because they contain user-generated content.
+- New accounts are not blocked and there is no CAPTCHA. Abuse control is OAuth, server-side rate limits, reporting, posting bans and audit history.
+
+### Change limits and slow mode
+
+The owner can edit limits in **Admin → Settings**. Defaults are:
+
+| Setting | Default |
+| --- | --- |
+| Chat slow mode | 5 seconds |
+| Chat messages per hour | 40 |
+| Reviews per 24 hours | 2 |
+| Bug reports per 24 hours | 5 |
+| Reports per 24 hours | 5 |
+
+Limits are enforced by database triggers, so changing the front end cannot bypass them. Setting a daily limit to `0` blocks that action until the owner raises it again.
 
 ## How downloads are matched
 
@@ -283,9 +340,9 @@ Release notes support lightweight Markdown-style lines. The changelog renderer t
 
 ## Service worker and caching
 
-`sw.js` pre-caches the shell, fonts, icons, CSS and JS. Navigations are network-first with an offline fallback; static assets are stale-while-revalidate.
+`sw.js` pre-caches the shell, fonts, icons, CSS and JS, including the profile and admin pages. Navigations are network-first with a per-URL cache and an offline fallback; static assets are stale-while-revalidate.
 
-After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v3` → `v4`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates.
+After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v4` → `v5`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v5`.
 
 GitHub and Supabase API requests are cross-origin and intentionally never cached by the service worker. The app’s own GitHub `localStorage` cache is separate.
 
@@ -313,6 +370,8 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
 ```text
 .
 ├── index.html
+├── profile.html
+├── admin.html
 ├── site.webmanifest
 ├── sw.js
 ├── robots.txt
@@ -322,9 +381,16 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
 ├── .github/workflows/pages.yml
 ├── README.md
 ├── supabase
-│   └── schema.sql
+│   ├── schema.sql
+│   └── migrations
+│       ├── 20261125_community_moderation.sql
+│       ├── 20261125_fix_track_visit_digest.sql
+│       └── 20261125_fix_admin_delete_audit.sql
 └── assets
-    ├── css/style.css
+    ├── css
+    │   ├── style.css
+    │   ├── profile.css
+    │   └── admin.css
     ├── data/reviews.js
     ├── fonts/
     │   ├── anton-latin.woff2
@@ -341,6 +407,9 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
     │   └── og-image.png
     └── js
         ├── app.js
+        ├── community-client.js
+        ├── profile.js
+        ├── admin.js
         └── config.js
 ```
 

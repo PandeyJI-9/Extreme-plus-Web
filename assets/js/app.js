@@ -25,7 +25,10 @@
   const OAUTH_STATE_TTL = 15 * 60 * 1000;
   const PENDING_ACTION_KEY = "extreme_plus_pending_action_v1";
   const DRAFT_PREFIX = "extreme_plus_draft_v1:";
+  const VISITOR_KEY = "extreme_plus_visitor_id";
   const CHAT_POLL_FALLBACK = 8000;
+  const STATS_POLL_MS = 60000;
+  const HEARTBEAT_MS = 60000;
   const AVATAR_PLACEHOLDER = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.2" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -57,9 +60,12 @@
     auth: {
       session: null,
       user: null,
+      profile: null,
+      role: "",
       loading: false,
       pendingAction: "",
       refreshTimer: 0,
+      heartbeatTimer: 0,
       opener: null
     },
     chat: {
@@ -74,6 +80,13 @@
     reviewRomTouched: false,
     reviewRootTouched: false,
     bugSubmitting: false,
+    reportSubmitting: false,
+    report: {
+      targetType: "",
+      targetId: "",
+      targetLabel: ""
+    },
+    statsTimer: 0,
     closeMobileMenu: null,
     heroRedraw: null
   };
@@ -192,6 +205,43 @@
     } catch (error) {
       return "";
     }
+  }
+
+  function resizeAvatarUrl(value, size = 64) {
+    if (!value) return "";
+    let url;
+    try {
+      url = new URL(value, window.location.href);
+    } catch (error) {
+      return "";
+    }
+    if (url.protocol !== "https:" && url.protocol !== "http:") return "";
+
+    if (/(^|\.)githubusercontent\.com$/i.test(url.hostname) && /^avatars\./i.test(url.hostname)) {
+      url.searchParams.set("s", String(size));
+    } else if (/(^|\.)googleusercontent\.com$/i.test(url.hostname)) {
+      const suffix = `=s${size}-c`;
+      if (/=s\d+(?:-c)?$/i.test(url.pathname)) {
+        url.pathname = url.pathname.replace(/=s\d+(?:-c)?$/i, suffix);
+      } else {
+        url.pathname = `${url.pathname}${suffix}`;
+      }
+    }
+    return url.href;
+  }
+
+  function profileUrlFor(username) {
+    const value = String(username || "").trim();
+    return value ? `./profile.html?u=${encodeURIComponent(value)}` : "";
+  }
+
+  function getVisitorId() {
+    let value = storageGet(VISITOR_KEY);
+    if (!value || value.length < 16 || value.length > 64) {
+      value = `v_${randomToken()}`;
+      storageSet(VISITOR_KEY, value);
+    }
+    return value;
   }
 
   function randomToken() {
@@ -1671,16 +1721,21 @@
     const avatar = safeHttpUrl(issue.user?.avatar_url || (username ? `https://github.com/${username}.png?size=96` : ""));
 
     return {
+      id: "",
+      user_id: "",
       name: truncate(displayName, 42),
       username,
-      avatar,
+      author_username: "",
+      profileUrl: "",
+      avatar: resizeAvatarUrl(avatar),
       rating,
       review: text,
       rom: truncate(cleanInlineMarkdown(rom), 42),
       root: truncate(cleanInlineMarkdown(root), 42),
       build: truncate(cleanInlineMarkdown(build), 42),
       date: issue.created_at || "",
-      url: safeHttpUrl(issue.html_url)
+      url: safeHttpUrl(issue.html_url),
+      source: "github"
     };
   }
 
@@ -1688,21 +1743,26 @@
     if (!review || typeof review !== "object" || !review.review) return null;
     const username = String(review.username || "").replace(/^@/, "");
     return {
+      id: "",
+      user_id: "",
       name: truncate(review.name || username || "Rider", 42),
       username,
-      avatar: safeHttpUrl(review.avatar || (username ? `https://github.com/${username}.png?size=96` : "")),
+      author_username: "",
+      profileUrl: "",
+      avatar: resizeAvatarUrl(review.avatar || (username ? `https://github.com/${username}.png?size=96` : "")),
       rating: Number.isInteger(Number(review.rating)) ? Math.min(5, Math.max(1, Number(review.rating))) : null,
       review: String(review.review),
       rom: truncate(review.rom || "", 42),
       root: truncate(review.root || "", 42),
       build: truncate(review.build || "", 42),
       date: review.date || "",
-      url: safeHttpUrl(review.url)
+      url: safeHttpUrl(review.url),
+      source: "github"
     };
   }
 
   function makeAvatar(review) {
-    const avatarUrl = safeHttpUrl(review.avatar || "");
+    const avatarUrl = safeHttpUrl(resizeAvatarUrl(review.avatar || ""));
     if (avatarUrl) {
       const image = create("img", "review-avatar");
       image.src = avatarUrl;
@@ -1785,9 +1845,16 @@
     footer.appendChild(makeAvatar(review));
 
     const user = create("div", "review-user");
-    user.appendChild(create("strong", "", review.name));
+    if (review.profileUrl) {
+      const author = create("a", "review-author-link", review.name);
+      author.href = review.profileUrl;
+      user.appendChild(author);
+    } else {
+      user.appendChild(create("strong", "", review.name));
+    }
     const metaParts = [];
-    if (review.username) metaParts.push(`@${review.username}`);
+    const account = review.author_username || review.username;
+    if (account) metaParts.push(`@${account}`);
     if (review.rom) metaParts.push(review.rom);
     if (review.root) metaParts.push(review.root);
     const meta = create("span", "", metaParts.join(" · ") || "Verified community review");
@@ -1798,6 +1865,17 @@
     if (review.build) footer.appendChild(create("span", "review-build", review.build));
 
     article.appendChild(footer);
+
+    if (
+      review.source === "community"
+      && review.id
+      && (!state.auth.user || review.user_id !== state.auth.user.id)
+    ) {
+      const actions = create("div", "review-card-actions");
+      actions.appendChild(createReportButton("review", review.id, `review by ${review.name}`));
+      article.appendChild(actions);
+    }
+
     return article;
   }
 
@@ -1884,6 +1962,7 @@
     if (!grid) return;
 
     setText("[data-review-count]", formatNumber(reviews.length));
+    setText('[data-stat="reviews"]', formatNumber(reviews.length));
 
     if (!reviews.length) {
       renderEmptyReviews();
@@ -1920,10 +1999,15 @@
     if (!row || typeof row !== "object") return null;
     const body = String(row.body || "").trim();
     if (!body) return null;
+    const username = String(row.author_username || "").trim();
     return {
-      name: truncate(String(row.author_name || "Rider"), 42),
+      id: String(row.id || ""),
+      user_id: String(row.user_id || ""),
+      name: truncate(String(row.author_name || username || "Rider"), 42),
       username: "",
-      avatar: safeHttpUrl(row.author_avatar || ""),
+      author_username: username,
+      profileUrl: profileUrlFor(username),
+      avatar: safeHttpUrl(resizeAvatarUrl(row.author_avatar || "")),
       rating: Number.isInteger(Number(row.rating)) ? Math.min(5, Math.max(1, Number(row.rating))) : null,
       review: body,
       rom: truncate(row.rom || "", 42),
@@ -1937,7 +2021,7 @@
 
   async function fetchSupabaseReviews() {
     const query = new URLSearchParams({
-      select: "id,user_id,created_at,author_name,author_avatar,provider,rating,body,rom,root_flavor,build",
+      select: "id,user_id,created_at,author_name,author_avatar,author_username,provider,rating,body,rom,root_flavor,build",
       order: "created_at.desc",
       limit: "60"
     });
@@ -2284,13 +2368,18 @@
   function clearAuthSession() {
     window.clearTimeout(state.auth.refreshTimer);
     state.auth.refreshTimer = 0;
+    stopCommunityHeartbeat();
     state.auth.session = null;
     state.auth.user = null;
+    state.auth.profile = null;
+    state.auth.role = "";
     storageRemove(AUTH_KEY);
+    updateCommunityLinks();
     syncDialogLock();
   }
 
   function authProviderOf(user) {
+    if (state.auth.profile && state.auth.profile.provider) return String(state.auth.profile.provider);
     if (!user) return "";
     if (user.app_metadata && user.app_metadata.provider) return String(user.app_metadata.provider);
     if (Array.isArray(user.identities) && user.identities[0] && user.identities[0].provider) {
@@ -2300,6 +2389,9 @@
   }
 
   function authNameOf(user) {
+    if (state.auth.profile && state.auth.profile.display_name) {
+      return truncate(String(state.auth.profile.display_name).trim(), 42) || "Rider";
+    }
     if (!user) return "";
     const meta = user.user_metadata || {};
     const name = meta.full_name || meta.name || meta.user_name || meta.preferred_username
@@ -2308,9 +2400,12 @@
   }
 
   function authAvatarOf(user) {
+    if (state.auth.profile && state.auth.profile.avatar_url) {
+      return safeHttpUrl(resizeAvatarUrl(state.auth.profile.avatar_url));
+    }
     if (!user) return "";
     const meta = user.user_metadata || {};
-    return safeHttpUrl(meta.avatar_url || meta.picture || user.avatar_url || "");
+    return safeHttpUrl(resizeAvatarUrl(meta.avatar_url || meta.picture || user.avatar_url || ""));
   }
 
   function providerLabel(provider) {
@@ -2368,6 +2463,24 @@
     }
   }
 
+  function updateCommunityLinks() {
+    const signedIn = Boolean(state.auth.session);
+    const profile = state.auth.profile;
+    const role = String(state.auth.role || "").toLowerCase();
+    const profileLink = $("[data-auth-profile]");
+    const adminLink = $("[data-auth-admin]");
+
+    if (profileLink) {
+      const username = profile && profile.username ? String(profile.username) : "";
+      profileLink.hidden = !signedIn || !username;
+      if (username) profileLink.href = profileUrlFor(username);
+    }
+
+    if (adminLink) {
+      adminLink.hidden = !signedIn || !(role === "owner" || role === "admin");
+    }
+  }
+
   function updateAuthUI() {
     const signedIn = Boolean(state.auth.session);
     const user = state.auth.user;
@@ -2402,7 +2515,13 @@
     });
     $$("[data-auth-hint]").forEach((node) => {
       if (signedIn) {
-        node.textContent = "Signed in. Your public name and avatar appear with your post.";
+        const username = state.auth.profile && state.auth.profile.username
+          ? `@${state.auth.profile.username}`
+          : name;
+        const role = state.auth.role && state.auth.role !== "member"
+          ? ` · ${state.auth.role}`
+          : "";
+        node.textContent = `Signed in as ${username}${role}. Your public profile appears with your post.`;
       } else if (node.closest("#bugDialog")) {
         node.textContent = "Sign in with Google or GitHub to send a report.";
       } else {
@@ -2437,10 +2556,11 @@
     }
 
     updateComposerLabels();
+    updateCommunityLinks();
 
-    // Signed-in highlighting is part of the chat render, so refresh it when
-    // the account state changes instead of waiting for the next poll.
+    // Report ownership and signed-in highlighting depend on the current user.
     if (state.chat.initialized) renderChatMessages(state.chat.messages, false);
+    if (state.reviews.length) renderReviews(state.reviews);
   }
 
   function scheduleAuthRefresh() {
@@ -2514,6 +2634,133 @@
       clearAuthSession();
     }
     updateAuthUI();
+  }
+
+  async function syncCommunityIdentity() {
+    if (!state.supabaseReady || !state.auth.session) {
+      state.auth.profile = null;
+      state.auth.role = "";
+      updateAuthUI();
+      return;
+    }
+
+    try {
+      const profile = await supabaseRequest("/rest/v1/rpc/community_ensure_profile", {
+        method: "POST",
+        auth: true,
+        body: {}
+      });
+      state.auth.profile = profile && typeof profile === "object" ? profile : null;
+
+      const role = await supabaseRequest("/rest/v1/rpc/community_my_role", {
+        method: "POST",
+        auth: true,
+        body: {}
+      });
+      state.auth.role = typeof role === "string" ? role : "";
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+        return;
+      }
+      console.warn("EXTREME++: community profile could not be loaded.", error);
+    }
+
+    updateAuthUI();
+
+    if (state.auth.session) {
+      await trackCommunityLogin();
+      startCommunityHeartbeat();
+      loadPublicStats();
+    }
+  }
+
+  async function trackCommunityLogin() {
+    if (!state.supabaseReady || !state.auth.session) return;
+    try {
+      await supabaseRequest("/rest/v1/rpc/community_track_login", {
+        method: "POST",
+        auth: true,
+        body: { p_provider: authProviderOf(state.auth.user) }
+      });
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+      }
+    }
+  }
+
+  async function heartbeat() {
+    if (!state.supabaseReady || !state.auth.session || document.hidden) return;
+    try {
+      await supabaseRequest("/rest/v1/rpc/community_heartbeat", {
+        method: "POST",
+        auth: true,
+        body: {}
+      });
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+      }
+    }
+  }
+
+  function startCommunityHeartbeat() {
+    stopCommunityHeartbeat();
+    if (!state.auth.session) return;
+    heartbeat();
+    state.auth.heartbeatTimer = window.setInterval(heartbeat, HEARTBEAT_MS);
+  }
+
+  function stopCommunityHeartbeat() {
+    window.clearInterval(state.auth.heartbeatTimer);
+    state.auth.heartbeatTimer = 0;
+  }
+
+  async function trackSiteVisit() {
+    if (!state.supabaseReady) return;
+    try {
+      await supabaseRequest("/rest/v1/rpc/community_track_visit", {
+        method: "POST",
+        body: {
+          p_visitor_id: getVisitorId(),
+          p_path: window.location.pathname || "/"
+        }
+      });
+    } catch (error) {
+      // Analytics must never block the page.
+    }
+  }
+
+  function renderPublicStats(stats) {
+    if (!stats || typeof stats !== "object") return;
+    ["members", "online", "visits", "logins", "reviews", "chat"].forEach((key) => {
+      setText(`[data-stat="${key}"]`, formatNumber(stats[key] || 0));
+    });
+  }
+
+  async function loadPublicStats() {
+    if (!state.supabaseReady) return;
+    try {
+      const stats = await supabaseRequest("/rest/v1/rpc/community_public_stats", {
+        method: "POST",
+        body: {}
+      });
+      renderPublicStats(stats);
+    } catch (error) {
+      // Keep the last known values; public analytics are non-essential.
+    }
+  }
+
+  function startStatsPolling() {
+    window.clearInterval(state.statsTimer);
+    if (!state.supabaseReady) return;
+    state.statsTimer = window.setInterval(() => {
+      if (!document.hidden) loadPublicStats();
+    }, STATS_POLL_MS);
   }
 
   function cleanAuthUrl() {
@@ -2636,6 +2883,7 @@
 
     if (state.auth.session) {
       await restoreAuthSession();
+      await syncCommunityIdentity();
     }
 
     updateAuthUI();
@@ -2645,6 +2893,7 @@
         try {
           await fetchAuthUser();
           scheduleAuthRefresh();
+          await syncCommunityIdentity();
         } catch (error) {
           console.warn("EXTREME++: signed in, but the profile could not be loaded.", error);
         }
@@ -2885,6 +3134,7 @@
       if (count) count.textContent = "0";
       clearDraft("review");
       hideDialog($("#reviewDialog"));
+      loadPublicStats();
       showToast("Review published. Thank you for putting it on the record.", 5200);
     } catch (error) {
       if (error.status === 401) {
@@ -3126,6 +3376,7 @@
       if (charCount) charCount.textContent = "0";
       clearDraft("bug");
       hideDialog($("#bugDialog"));
+      loadPublicStats();
       showToast("Private bug report sent. Only you and the maintainer can read it.", 6000);
     } catch (error) {
       if (error.status === 401) {
@@ -3226,14 +3477,140 @@
     });
   }
 
+  function createReportButton(targetType, targetId, targetLabel, className = "report-link") {
+    const button = create("button", className, "Report");
+    button.type = "button";
+    button.dataset.reportType = String(targetType || "");
+    button.dataset.reportId = String(targetId || "");
+    button.dataset.reportLabel = String(targetLabel || "this content");
+    button.setAttribute("aria-label", `Report ${targetLabel || "this content"}`);
+    return button;
+  }
+
+  function openReportDialog(targetType, targetId, targetLabel, opener) {
+    if (!state.supabaseReady || state.communityMode !== "supabase") {
+      showToast("Reporting is available when the on-site community is connected.", 4800);
+      return;
+    }
+    if (!state.auth.session) {
+      showToast("Sign in with Google or GitHub to report content.", 4800);
+      openAuthDialog({ opener });
+      return;
+    }
+
+    const dialog = $("#reportDialog");
+    const form = $("#reportForm");
+    const preview = $("#reportPreview");
+    const reason = $("#reportReason");
+    const status = $("#reportStatus");
+    const charCount = $("#reportCharCount");
+    if (!dialog || !form) return;
+
+    state.report.targetType = String(targetType || "");
+    state.report.targetId = String(targetId || "");
+    state.report.targetLabel = String(targetLabel || "this content");
+    const typeInput = $("#reportTargetType");
+    const idInput = $("#reportTargetId");
+    if (typeInput) typeInput.value = state.report.targetType;
+    if (idInput) idInput.value = state.report.targetId;
+    if (preview) {
+      preview.hidden = false;
+      preview.textContent = `Reporting: ${state.report.targetLabel}`;
+    }
+    if (reason) reason.value = "";
+    if (charCount) charCount.textContent = "0";
+    clearFormStatus(status);
+    showDialog(dialog, opener, "#reportReason");
+  }
+
+  async function submitReport() {
+    const form = $("#reportForm");
+    const reasonInput = $("#reportReason");
+    const status = $("#reportStatus");
+    const submit = $("#reportSubmit");
+    if (!form || !reasonInput || !state.report.targetId) return;
+    const reason = reasonInput.value.trim();
+    if (reason.length < 5) {
+      showFormStatus(status, "Give a specific reason of at least 5 characters.", "error");
+      reasonInput.focus();
+      return;
+    }
+    if (reason.length > 500) {
+      showFormStatus(status, "Keep the reason under 500 characters.", "error");
+      return;
+    }
+
+    state.reportSubmitting = true;
+    setButtonBusy(submit, true, "Sending…");
+    clearFormStatus(status);
+    try {
+      await supabaseRequest("/rest/v1/rpc/community_report_content", {
+        method: "POST",
+        auth: true,
+        body: {
+          p_target_type: state.report.targetType,
+          p_target_id: state.report.targetId,
+          p_reason: reason
+        }
+      });
+      hideDialog($("#reportDialog"));
+      form.reset();
+      state.report.targetType = "";
+      state.report.targetId = "";
+      state.report.targetLabel = "";
+      showToast("Report received. The moderation team will review it privately.", 6000);
+    } catch (error) {
+      if (error.status === 401) {
+        clearAuthSession();
+        updateAuthUI();
+        showFormStatus(status, "Your session expired. Sign in again to report.", "error");
+        openAuthDialog({ opener: submit });
+      } else if (error.status === 403) {
+        showFormStatus(status, "This account cannot submit reports right now.", "error");
+      } else if (isRateLimitError(error)) {
+        showFormStatus(status, error.message || "Report limit reached. Try again later.", "error");
+      } else {
+        showFormStatus(status, error.message || "The report could not be sent. Try again.", "error");
+      }
+    } finally {
+      state.reportSubmitting = false;
+      setButtonBusy(submit, false);
+    }
+  }
+
+  function initReportDialog() {
+    const dialog = $("#reportDialog");
+    const form = $("#reportForm");
+    const reason = $("#reportReason");
+    const charCount = $("#reportCharCount");
+    if (!dialog || !form) return;
+
+    initDialogChrome(dialog, "#reportDialogClose");
+
+    if (reason && charCount) {
+      const update = () => { charCount.textContent = String(reason.value.length); };
+      reason.addEventListener("input", update);
+      update();
+    }
+
+    form.addEventListener("submit", (event) => {
+      event.preventDefault();
+      if (state.reportSubmitting) return;
+      submitReport();
+    });
+  }
+
   function normaliseChatRow(row) {
     if (!row || typeof row !== "object") return null;
+    const username = String(row.author_username || "").trim();
     return {
       id: row.id || "",
       user_id: row.user_id || "",
       created_at: row.created_at || "",
-      author_name: truncate(String(row.author_name || "Rider"), 42),
-      author_avatar: safeHttpUrl(row.author_avatar || ""),
+      author_name: truncate(String(row.author_name || username || "Rider"), 42),
+      author_username: username,
+      profileUrl: profileUrlFor(username),
+      author_avatar: safeHttpUrl(resizeAvatarUrl(row.author_avatar || "")),
       provider: String(row.provider || ""),
       body: String(row.body || "")
     };
@@ -3262,7 +3639,7 @@
     if (state.auth.user && message.user_id === state.auth.user.id) item.classList.add("is-own");
 
     const avatar = create("span", "chat-message-avatar");
-    const avatarUrl = safeHttpUrl(message.author_avatar || "");
+    const avatarUrl = safeHttpUrl(resizeAvatarUrl(message.author_avatar || ""));
     if (avatarUrl) {
       const image = document.createElement("img");
       image.src = avatarUrl;
@@ -3283,11 +3660,20 @@
 
     const main = create("div", "chat-message-main");
     const head = create("div", "chat-message-head");
-    head.appendChild(create("strong", "", message.author_name || "Rider"));
+    if (message.profileUrl) {
+      const author = create("a", "chat-author-link", message.author_name || "Rider");
+      author.href = message.profileUrl;
+      head.appendChild(author);
+    } else {
+      head.appendChild(create("strong", "", message.author_name || "Rider"));
+    }
     const time = document.createElement("time");
     time.dateTime = message.created_at || "";
     time.textContent = formatChatTime(message.created_at);
     head.appendChild(time);
+    if (message.id && (!state.auth.user || message.user_id !== state.auth.user.id)) {
+      head.appendChild(createReportButton("chat", message.id, `message by ${message.author_name}`, "report-link chat-report"));
+    }
     main.appendChild(head);
     main.appendChild(create("div", "chat-message-body", message.body));
     item.appendChild(main);
@@ -3362,7 +3748,7 @@
     if (!state.chat.initialized) setChatStatus("Connecting…", "loading");
     try {
       const query = new URLSearchParams({
-        select: "id,user_id,created_at,author_name,author_avatar,provider,body",
+        select: "id,user_id,created_at,author_name,author_avatar,author_username,provider,body",
         order: "created_at.desc",
         limit: String(state.supabase.chatLimit)
       });
@@ -3454,6 +3840,7 @@
       const count = $("#chatCharCount");
       if (count) count.textContent = "0";
       clearDraft("chat");
+      loadPublicStats();
       setChatStatus("Live", "live");
     } catch (error) {
       if (error.status === 401) {
@@ -3569,6 +3956,18 @@
         event.preventDefault();
         if (typeof state.closeMobileMenu === "function") state.closeMobileMenu();
         handleAuthTrigger(authTrigger);
+        return;
+      }
+
+      const reportTrigger = target.closest("[data-report-type][data-report-id]");
+      if (reportTrigger) {
+        event.preventDefault();
+        openReportDialog(
+          reportTrigger.dataset.reportType,
+          reportTrigger.dataset.reportId,
+          reportTrigger.dataset.reportLabel,
+          reportTrigger
+        );
         return;
       }
 
@@ -3727,11 +4126,20 @@
     updateAuthUI();
     initCommunityActions();
     initAuthDialog();
+    initReportDialog();
     initReviewDialog();
     initBugDialog();
     initChat();
     initDrafts();
     initAuth();
+    trackSiteVisit();
+    loadPublicStats();
+    startStatsPolling();
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) return;
+      loadPublicStats();
+      heartbeat();
+    });
   }
 
 

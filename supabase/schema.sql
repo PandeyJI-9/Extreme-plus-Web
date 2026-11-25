@@ -19,13 +19,16 @@
 --     through the API while signed in, add yourself to community_admins.
 --
 -- After running this file:
---   1. Authentication → Providers → enable Google and/or GitHub.
---   2. Authentication → URL Configuration:
+--   1. Run supabase/migrations/20261125_community_moderation.sql
+--      (profiles, reports, bans, audit log, slow mode and analytics).
+--   2. Authentication → Providers → enable Google and/or GitHub.
+--   3. Authentication → URL Configuration:
 --        Site URL:      https://pandeyji-9.github.io/Extreme-plus-Web/
 --        Redirect URLs: https://pandeyji-9.github.io/Extreme-plus-Web/
 --                       http://localhost:8080/  (only if testing locally)
---   3. Paste the project URL and anon/publishable key into
+--   4. Paste the project URL and anon/publishable key into
 --      assets/js/config.js → community.supabase.
+--   5. Sign in once, then assign the owner using the README owner block.
 -- ============================================================
 
 create extension if not exists pgcrypto;
@@ -60,12 +63,9 @@ $$;
 revoke all on function public.is_community_admin() from public;
 grant execute on function public.is_community_admin() to authenticated;
 
--- Add the developer after signing in once:
---   insert into public.community_admins (user_id, note)
---   select id, 'developer'
---   from auth.users
---   where email = 'you@example.com'
---   on conflict (user_id) do nothing;
+-- Add staff only after applying the moderation migration. The owner is
+-- assigned explicitly; see README "Assign the owner". The site never
+-- auto-promotes the first signed-in account.
 
 -- ------------------------------------------------------------
 -- Tables
@@ -251,12 +251,18 @@ $$;
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
+set search_path = public
 as $$
 begin
   new.updated_at := now();
   return new;
 end;
 $$;
+
+-- Trigger-only helpers must not be callable through the REST API.
+revoke all on function public.fill_community_author() from public, anon, authenticated;
+revoke all on function public.enforce_community_rate_limit() from public, anon, authenticated;
+revoke all on function public.touch_updated_at() from public, anon, authenticated;
 
 -- Trigger names are deliberately ordered (a_ then b_): PostgreSQL fires
 -- same-timing triggers in name order, so author data exists before the

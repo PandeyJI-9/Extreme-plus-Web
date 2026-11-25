@@ -43,8 +43,8 @@ window.EXTREME_CONFIG = Object.freeze({
   community: Object.freeze({
     mode: "auto",
     supabase: Object.freeze({
-      url: "",
-      anonKey: "",
+      url: "https://yudacdynrbvfromihwas.supabase.co",
+      anonKey: "sb_publishable_Iok1VjBVuyTkpIDrExwd7Q_NvFLFz4M",
       reviewsTable: "reviews",
       bugsTable: "bug_reports",
       chatTable: "chat_messages",

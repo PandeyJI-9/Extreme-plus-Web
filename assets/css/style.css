@@ -4780,13 +4780,42 @@ strong {
   gap: 0.08rem;
 }
 
-.review-user strong {
+.review-user strong,
+.review-user .review-author-link {
   overflow: hidden;
   color: var(--text-soft);
   font-size: 0.65rem;
   font-weight: 550;
+  text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.review-user .review-author-link:hover {
+  color: var(--blue);
+}
+
+.review-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.35rem;
+}
+
+.report-link {
+  padding: 0.15rem 0;
+  border: 0;
+  background: none;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.44rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.report-link:hover {
+  color: var(--red);
 }
 
 .review-user span {
@@ -5956,6 +5985,14 @@ html[data-community="github"] .community-pulse-grid {
   grid-template-columns: repeat(2, 1fr);
 }
 
+.community-pulse-grid--stats {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+html[data-community="github"] .community-pulse-grid--stats {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .community-pulse-grid > div {
   display: flex;
   min-width: 0;
@@ -5995,6 +6032,26 @@ html[data-community="github"] .community-pulse-grid {
   border-radius: 50%;
   background: var(--green);
   box-shadow: 0 0 8px rgba(79, 227, 156, 0.55);
+}
+
+.community-pulse-note {
+  display: block;
+  margin-top: 0.55rem;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.38rem;
+  line-height: 1.55;
+}
+
+.report-preview {
+  margin-top: 1rem;
+  padding: 0.7rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(var(--ink-rgb), 0.025);
+  color: var(--text-soft);
+  font-size: 0.66rem;
+  overflow-wrap: anywhere;
 }
 
 .community-layout {
@@ -6187,11 +6244,22 @@ html[data-theme="light"] .community-chat {
   gap: 0.45rem;
 }
 
-.chat-message-head strong {
+.chat-message-head strong,
+.chat-message-head .chat-author-link {
   color: var(--text);
   font-size: 0.66rem;
   font-weight: 600;
   letter-spacing: -0.005em;
+  text-decoration: none;
+}
+
+.chat-message-head .chat-author-link:hover {
+  color: var(--blue);
+}
+
+.chat-message-head .chat-report {
+  margin-left: auto;
+  font-size: 0.4rem;
 }
 
 .chat-message-head time {
@@ -8083,6 +8151,10 @@ html[data-community="supabase"] [data-github-only] {
 
   .community-pulse-grid {
     gap: 0.45rem;
+  }
+
+  .community-pulse-grid--stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .community-pulse-grid span {

@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js" data-community="supabase">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#06070b" id="themeColorMeta">
+  <title>Moderation — PROJECT EXTREME++</title>
+  <meta name="description" content="Private PROJECT EXTREME++ community moderation dashboard.">
+  <meta name="robots" content="noindex, nofollow">
+  <link rel="icon" href="./assets/img/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="./assets/fonts/anton-latin.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/inter-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./assets/fonts/jetbrains-mono-latin-variable.woff2" as="font" type="font/woff2" crossorigin>
+  <script>
+    (function () {
+      var root = document.documentElement;
+      root.classList.remove("no-js");
+      root.classList.add("js");
+      var theme = "dark";
+      try {
+        var stored = window.localStorage.getItem("extreme_plus_theme");
+        if (stored === "light" || stored === "dark") theme = stored;
+        else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) theme = "light";
+      } catch (error) {}
+      root.setAttribute("data-theme", theme);
+      root.style.colorScheme = theme;
+      var meta = document.getElementById("themeColorMeta");
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f3f5fa" : "#06070b");
+    })();
+  </script>
+  <link rel="stylesheet" href="./assets/css/style.css">
+  <link rel="stylesheet" href="./assets/css/admin.css">
+</head>
+<body class="admin-page">
+  <a class="skip-link" href="#main">Skip to content</a>
+  <div class="page-grain" aria-hidden="true"></div>
+
+  <header class="admin-header">
+    <div class="container admin-header-inner">
+      <a class="admin-brand" href="./" aria-label="PROJECT EXTREME++ home">
+        <span class="admin-brand-mark" aria-hidden="true">EX++</span>
+        <span class="admin-brand-copy"><strong>COMMAND DECK</strong><small>Moderation console</small></span>
+      </a>
+      <div class="admin-header-actions">
+        <span class="admin-role" id="adminRole" hidden>member</span>
+        <span class="admin-user" id="adminUser">Checking access…</span>
+        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false">
+          <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.1" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M18.5 5.5 17 7M7 17l-1.5 1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+          <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.2 15.1A8.3 8.3 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="button button--ghost admin-signout" id="adminSignOut" type="button" hidden>Sign out</button>
+      </div>
+    </div>
+  </header>
+
+  <main class="admin-main container" id="main" tabindex="-1">
+    <div class="admin-state" id="adminLoading">
+      <span class="section-kicker">Authorised access only</span>
+      <p>Checking your community role…</p>
+    </div>
+
+    <div class="admin-state admin-state--error" id="adminDenied" hidden>
+      <span class="section-kicker">Access denied</span>
+      <h1 id="adminDeniedTitle">Staff access required.</h1>
+      <p id="adminDeniedText">Sign in with an owner or admin account to open the moderation console.</p>
+      <div class="admin-state-actions">
+        <a class="button button--primary" href="./#community">Back to the community <span class="button-arrow" aria-hidden="true">→</span></a>
+        <a class="button button--ghost" href="./profile.html">My profile <span class="button-arrow" aria-hidden="true">→</span></a>
+      </div>
+    </div>
+
+    <div class="admin-app" id="adminApp" hidden>
+      <section class="admin-hero reveal" aria-labelledby="adminTitle">
+        <div>
+          <span class="section-kicker">Owner / admin surface</span>
+          <h1 id="adminTitle">Command <span class="text-gradient">deck.</span></h1>
+          <p class="admin-lede">Reports, posting bans, private bug reports, audit history and community health. Bans block posting only — reading and sign-in stay available.</p>
+        </div>
+        <div class="admin-hero-meta">
+          <span>Signed in as <strong id="adminIdentity">staff</strong></span>
+          <span class="admin-live"><i aria-hidden="true"></i> Live Supabase moderation</span>
+        </div>
+      </section>
+
+      <section class="admin-stat-grid" aria-label="Community overview">
+        <article class="admin-stat"><span data-admin-stat="open_reports">—</span><small>Open reports</small></article>
+        <article class="admin-stat"><span data-admin-stat="active_bans">—</span><small>Active bans</small></article>
+        <article class="admin-stat"><span data-admin-stat="open_bugs">—</span><small>Open bugs</small></article>
+        <article class="admin-stat"><span data-admin-stat="members">—</span><small>Members</small></article>
+        <article class="admin-stat"><span data-admin-stat="online">—</span><small>Online now</small></article>
+        <article class="admin-stat"><span data-admin-stat="visits">—</span><small>Visits</small></article>
+        <article class="admin-stat"><span data-admin-stat="logins">—</span><small>Sign-ins</small></article>
+        <article class="admin-stat"><span data-admin-stat="reviews">—</span><small>Reviews</small></article>
+        <article class="admin-stat"><span data-admin-stat="chat">—</span><small>Chat messages</small></article>
+      </section>
+
+      <div class="admin-tabs" role="tablist" aria-label="Moderation sections">
+        <button class="admin-tab is-active" id="tabOverview" type="button" role="tab" aria-selected="true" aria-controls="panelOverview" data-admin-tab="overview">Overview</button>
+        <button class="admin-tab" id="tabReports" type="button" role="tab" aria-selected="false" aria-controls="panelReports" data-admin-tab="reports">Reports</button>
+        <button class="admin-tab" id="tabContent" type="button" role="tab" aria-selected="false" aria-controls="panelContent" data-admin-tab="content">Content</button>
+        <button class="admin-tab" id="tabBans" type="button" role="tab" aria-selected="false" aria-controls="panelBans" data-admin-tab="bans">Bans</button>
+        <button class="admin-tab" id="tabBugs" type="button" role="tab" aria-selected="false" aria-controls="panelBugs" data-admin-tab="bugs">Bug reports</button>
+        <button class="admin-tab" id="tabTeam" type="button" role="tab" aria-selected="false" aria-controls="panelTeam" data-admin-tab="team" hidden>Team</button>
+        <button class="admin-tab" id="tabSettings" type="button" role="tab" aria-selected="false" aria-controls="panelSettings" data-admin-tab="settings" hidden>Settings</button>
+        <button class="admin-tab" id="tabAudit" type="button" role="tab" aria-selected="false" aria-controls="panelAudit" data-admin-tab="audit">Audit log</button>
+      </div>
+
+      <section class="admin-panel is-active" id="panelOverview" role="tabpanel" aria-labelledby="tabOverview" data-admin-panel="overview">
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Live health</span><h2>Community pulse</h2></div>
+          <button class="button button--ghost" id="refreshOverview" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <div class="admin-overview-grid">
+          <article class="admin-card">
+            <h3>Moderation queue</h3>
+            <div class="admin-mini-grid">
+              <div><span data-admin-stat="open_reports">—</span><small>Open reports</small></div>
+              <div><span data-admin-stat="active_bans">—</span><small>Active bans</small></div>
+              <div><span data-admin-stat="open_bugs">—</span><small>Open bug reports</small></div>
+            </div>
+            <p class="admin-muted">Posting-only bans keep accounts signed in and able to read. Expired bans stop blocking automatically.</p>
+          </article>
+          <article class="admin-card">
+            <h3>Public totals</h3>
+            <div class="admin-mini-grid">
+              <div><span data-admin-stat="members">—</span><small>Members</small></div>
+              <div><span data-admin-stat="online">—</span><small>Online now</small></div>
+              <div><span data-admin-stat="visits">—</span><small>Visits</small></div>
+            </div>
+            <p class="admin-muted">Public stats show aggregate counts only. Detailed daily analytics are owner-only.</p>
+          </article>
+        </div>
+
+        <div class="admin-owner" id="ownerAnalytics" hidden>
+          <div class="admin-panel-head">
+            <div><span class="section-kicker">Owner analytics</span><h2>Daily activity</h2></div>
+            <label class="admin-inline-field">Window
+              <select id="ownerDays">
+                <option value="7">7 days</option>
+                <option value="30" selected>30 days</option>
+                <option value="90">90 days</option>
+              </select>
+            </label>
+          </div>
+          <div class="admin-chart" id="dailyChart" aria-label="Daily visits, sign-ins, reviews and chat"></div>
+          <div class="admin-chart-legend" aria-hidden="true">
+            <span><i style="background: var(--blue)"></i> Visits</span>
+            <span><i style="background: var(--violet)"></i> Sign-ins</span>
+            <span><i style="background: var(--green)"></i> Reviews</span>
+            <span><i style="background: #ffaa66"></i> Chat</span>
+          </div>
+          <div class="admin-overview-grid admin-overview-grid--three">
+            <article class="admin-card">
+              <h3>Providers</h3>
+              <div class="admin-list" id="providerList"></div>
+            </article>
+            <article class="admin-card">
+              <h3>Top paths</h3>
+              <div class="admin-list" id="topPaths"></div>
+            </article>
+            <article class="admin-card">
+              <h3>Newest members</h3>
+              <div class="admin-list" id="recentMembers"></div>
+            </article>
+          </div>
+          <div class="admin-card">
+            <h3>Moderation summary</h3>
+            <div class="admin-mini-grid" id="ownerModeration"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="admin-panel" id="panelReports" role="tabpanel" aria-labelledby="tabReports" data-admin-panel="reports" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Safety queue</span><h2>Open reports</h2></div>
+          <button class="button button--ghost" data-admin-refresh="reports" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <div class="admin-list admin-list--cards" id="reportsList"><p class="admin-muted">Loading reports…</p></div>
+      </section>
+
+      <section class="admin-panel" id="panelContent" role="tabpanel" aria-labelledby="tabContent" data-admin-panel="content" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Published content</span><h2>Reviews and chat</h2></div>
+          <button class="button button--ghost" data-admin-refresh="content" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <div class="admin-overview-grid">
+          <article class="admin-card">
+            <h3>Latest reviews</h3>
+            <div class="admin-list" id="contentReviews"></div>
+          </article>
+          <article class="admin-card">
+            <h3>Latest chat messages</h3>
+            <div class="admin-list" id="contentChat"></div>
+          </article>
+        </div>
+      </section>
+
+      <section class="admin-panel" id="panelBans" role="tabpanel" aria-labelledby="tabBans" data-admin-panel="bans" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Posting restrictions</span><h2>Bans</h2></div>
+          <button class="button button--ghost" data-admin-refresh="bans" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <form class="admin-form admin-form--inline" id="banForm" novalidate>
+          <div class="admin-form-field">
+            <label for="banUsername">Username</label>
+            <input id="banUsername" name="username" type="text" placeholder="rider_name" autocomplete="off" spellcheck="false" required>
+          </div>
+          <div class="admin-form-field">
+            <label for="banReason">Reason</label>
+            <input id="banReason" name="reason" type="text" maxlength="500" placeholder="Spam, harassment, scam link…" required>
+          </div>
+          <div class="admin-form-field">
+            <label for="banExpiry">Expires</label>
+            <select id="banExpiry" name="expiry">
+              <option value="3600">1 hour</option>
+              <option value="86400" selected>1 day</option>
+              <option value="604800">7 days</option>
+              <option value="2592000">30 days</option>
+              <option value="">Permanent</option>
+            </select>
+          </div>
+          <button class="button button--primary" id="banSubmit" type="submit"><span>Apply posting ban</span></button>
+        </form>
+        <p class="admin-hint">Admins can ban members. Only the owner can ban another admin. The owner account cannot be banned.</p>
+        <div class="admin-list admin-list--cards" id="bansList"><p class="admin-muted">Loading bans…</p></div>
+      </section>
+
+      <section class="admin-panel" id="panelBugs" role="tabpanel" aria-labelledby="tabBugs" data-admin-panel="bugs" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Private reports</span><h2>Bug reports</h2></div>
+          <button class="button button--ghost" data-admin-refresh="bugs" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <div class="admin-list admin-list--cards" id="bugsList"><p class="admin-muted">Loading private bug reports…</p></div>
+      </section>
+
+      <section class="admin-panel" id="panelTeam" role="tabpanel" aria-labelledby="tabTeam" data-admin-panel="team" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Owner only</span><h2>Staff team</h2></div>
+          <button class="button button--ghost" data-admin-refresh="team" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <form class="admin-form admin-form--inline" id="teamForm" novalidate>
+          <div class="admin-form-field">
+            <label for="teamUsername">Add admin by username</label>
+            <input id="teamUsername" name="username" type="text" placeholder="rider_name" autocomplete="off" spellcheck="false" required>
+          </div>
+          <div class="admin-form-field">
+            <label for="teamNote">Note <span class="label-optional">optional</span></label>
+            <input id="teamNote" name="note" type="text" maxlength="200" placeholder="Why this person has access">
+          </div>
+          <button class="button button--primary" id="teamSubmit" type="submit"><span>Grant admin</span></button>
+        </form>
+        <p class="admin-hint">Only the owner can add or remove admins. Admins can moderate content, bans, reports and private bug reports.</p>
+        <div class="admin-list admin-list--cards" id="teamList"><p class="admin-muted">Loading team…</p></div>
+      </section>
+
+      <section class="admin-panel" id="panelSettings" role="tabpanel" aria-labelledby="tabSettings" data-admin-panel="settings" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Owner only</span><h2>Slow mode and limits</h2></div>
+          <button class="button button--ghost" data-admin-refresh="settings" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <form class="admin-form" id="settingsForm" novalidate>
+          <div class="admin-form-grid">
+            <div class="admin-form-field">
+              <label for="settingChatSlow">Chat slow mode (seconds)</label>
+              <input id="settingChatSlow" name="chat_slow_seconds" type="number" min="1" max="3600" step="1" required>
+            </div>
+            <div class="admin-form-field">
+              <label for="settingChatHourly">Chat messages per hour</label>
+              <input id="settingChatHourly" name="chat_hourly_limit" type="number" min="1" max="1000" step="1" required>
+            </div>
+            <div class="admin-form-field">
+              <label for="settingReviews">Reviews per 24 hours</label>
+              <input id="settingReviews" name="reviews_per_day" type="number" min="0" max="100" step="1" required>
+            </div>
+            <div class="admin-form-field">
+              <label for="settingBugs">Bug reports per 24 hours</label>
+              <input id="settingBugs" name="bugs_per_day" type="number" min="0" max="100" step="1" required>
+            </div>
+            <div class="admin-form-field">
+              <label for="settingReports">Reports per 24 hours</label>
+              <input id="settingReports" name="reports_per_day" type="number" min="0" max="100" step="1" required>
+            </div>
+          </div>
+          <p class="form-status" id="settingsStatus" hidden></p>
+          <button class="button button--primary" id="settingsSubmit" type="submit"><span>Save settings</span></button>
+        </form>
+        <p class="admin-hint">Changes apply immediately. Slow mode is enforced server-side in the database; clearing it is not possible without an owner action.</p>
+      </section>
+
+      <section class="admin-panel" id="panelAudit" role="tabpanel" aria-labelledby="tabAudit" data-admin-panel="audit" hidden>
+        <div class="admin-panel-head">
+          <div><span class="section-kicker">Accountability</span><h2>Recent actions</h2></div>
+          <button class="button button--ghost" data-admin-refresh="audit" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
+        </div>
+        <div class="admin-list admin-list--cards" id="auditList"><p class="admin-muted">Loading audit log…</p></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="./assets/js/config.js" defer></script>
+  <script src="./assets/js/community-client.js" defer></script>
+  <script src="./assets/js/admin.js" defer></script>
+</body>
+</html>
