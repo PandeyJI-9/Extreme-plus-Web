@@ -6,7 +6,7 @@
 -- What this creates
 --   * public.reviews        public, signed-in reviews
 --   * public.bug_reports    private reports (author + community admins)
---   * public.chat_messages  public, signed-in general chat
+--   * public.chat_messages  public, signed-in channel chat
 --   * public.community_admins  optional moderator allowlist
 --
 -- Security model
@@ -18,10 +18,13 @@
 --     dashboard (service role) without an extra policy. To read them
 --     through the API while signed in, add yourself to community_admins.
 --
--- After running this file:
---   1. Run supabase/migrations/20261125_community_moderation.sql
---      (profiles, reports, bans, audit log, slow mode and analytics).
---   2. Authentication → Providers → enable Google and/or GitHub.
+-- After running this file, run the migrations in order. They add profiles,
+-- moderation, channels/forwarding, pins/replies/notifications, the release
+-- watcher and 2 MB chat attachments in the public community-attachments
+-- Storage bucket. See README.md for the complete ordered list.
+--
+-- After the migrations:
+--   1. Authentication → Providers → enable Google and/or GitHub.
 --   3. Authentication → URL Configuration:
 --        Site URL:      https://pandeyji-9.github.io/Extreme-plus-Web/
 --        Redirect URLs: https://pandeyji-9.github.io/Extreme-plus-Web/

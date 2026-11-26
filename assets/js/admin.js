@@ -342,15 +342,46 @@
     }
   }
 
-  async function removeContent(type, id) {
+  async function removeContent(type, id, attachmentPath = "") {
     if (!["review", "chat"].includes(type) || !isUuid(id)) {
       throw new Error("Invalid content target.");
     }
     const tableName = type === "review" ? "reviews" : "chat_messages";
+    let path = String(attachmentPath || "");
+
+    if (type === "chat" && !path) {
+      try {
+        const rows = await table("chat_messages", qs({
+          select: "attachment_path",
+          id: `eq.${id}`,
+          limit: "1"
+        }));
+        path = rows && rows[0] && rows[0].attachment_path ? String(rows[0].attachment_path) : "";
+      } catch (error) {
+        path = "";
+      }
+    }
+
     await table(tableName, qs({ id: `eq.${id}` }), {
       method: "DELETE",
       headers: { Prefer: "return=minimal" }
     });
+
+    if (path) {
+      try {
+        const remaining = await table("chat_messages", qs({
+          select: "id",
+          attachment_path: `eq.${path}`,
+          limit: "1"
+        }));
+        if (!remaining || !remaining.length) {
+          const session = await EC.getValidSession();
+          if (session) await EC.storageDelete("community-attachments", path, session);
+        }
+      } catch (error) {
+        // Storage cleanup is best-effort; the message is already deleted.
+      }
+    }
   }
 
   async function deleteReportContent(report, button) {
@@ -465,12 +496,12 @@
     return item;
   }
 
-  async function deletePublishedContent(type, id, button) {
+  async function deletePublishedContent(type, id, button, attachmentPath = "") {
     const label = type === "review" ? "review" : "chat message";
     if (!window.confirm(`Delete this ${label}? This cannot be undone.`)) return;
     setBusy(button, true, "Deleting…");
     try {
-      await removeContent(type, id);
+      await removeContent(type, id, attachmentPath);
       EC.showToast(`The ${label} was deleted.`, 4600);
       await loadContent();
       await loadOverview();
@@ -494,7 +525,7 @@
           limit: "25"
         })),
         table("chat_messages", qs({
-          select: "id,user_id,created_at,author_name,author_username,body",
+          select: "id,user_id,created_at,author_name,author_username,body,attachment_path,attachment_name,attachment_type,attachment_size,attachment_kind",
           order: "created_at.desc",
           limit: "25"
         }))
@@ -526,10 +557,11 @@
             title: message.author_name || message.author_username || "Rider",
             meta: [
               message.author_username ? `@${message.author_username}` : "no username",
+              message.attachment_name ? `${message.attachment_kind || "file"} attachment` : "",
               EC.formatDateTime(message.created_at)
-            ],
-            body: String(message.body || ""),
-            onDelete: (button) => deletePublishedContent("chat", message.id, button)
+            ].filter(Boolean),
+            body: String(message.body || "") || (message.attachment_name ? `Attachment: ${message.attachment_name}` : ""),
+            onDelete: (button) => deletePublishedContent("chat", message.id, button, message.attachment_path)
           }));
         });
       }

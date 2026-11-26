@@ -20,6 +20,23 @@
   const CHAT_POLL_MS = 6500;
   const STATS_POLL_MS = 60000;
   const MEMBERS_POLL_MS = 90000;
+  const PINNED_POLL_MS = 30000;
+  const NOTIFICATIONS_POLL_MS = 30000;
+  const RELEASE_SYNC_MS = 10 * 60 * 1000;
+  const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+  const ATTACHMENT_BUCKET = "community-attachments";
+  const INLINE_IMAGE_TYPES = new Set([
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif"
+  ]);
+  const MESSAGE_FIELDS = [
+    "id", "user_id", "author_name", "author_avatar", "author_username", "provider",
+    "body", "channel", "created_at",
+    "attachment_path", "attachment_name", "attachment_type", "attachment_size", "attachment_kind",
+    "forwarded_from_message_id", "forwarded_from_name", "forwarded_from_username",
+    "forwarded_from_channel", "forwarded_at",
+    "reply_to_message_id", "reply_to_author_name", "reply_to_author_username", "reply_to_excerpt",
+    "pinned_at", "is_release_announcement", "release_tag", "release_name", "release_url"
+  ].join(",");
 
   const CHANNELS = {
     general: {
@@ -55,6 +72,8 @@
   const PUBLIC_CHANNELS = Object.keys(CHANNELS).filter((key) => CHANNELS[key].public);
   const USER_ICON = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.2" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>';
   const MENU_ICONS = {
+    reply: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 7 4 12l5 5M4 12h9a6 6 0 0 1 6 6v1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    pin: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m9 4 6 6-2 2 3 3-1 1-3-3-2 2-6-6 5-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="m8 16-3 3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
     forward: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M14 5 20 11l-6 6M20 11H8a4 4 0 0 0-4 4v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>',
     copy: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="8" y="8" width="11" height="12" rx="2" stroke="currentColor" stroke-width="1.7"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
     report: '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3 2.8 20h18.4L12 3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M12 9v5M12 17.2v.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>',
@@ -85,7 +104,19 @@
     forwardTarget: "",
     reportMessage: null,
     authBusy: false,
-    timers: { chat: 0, stats: 0, members: 0, heartbeat: 0 },
+    pinned: null,
+    pinnedChannel: "",
+    notifications: [],
+    notificationsUnread: 0,
+    notificationsLoaded: false,
+    notifiedIds: new Set(),
+    replyTo: null,
+    pendingAttachment: null,
+    attachmentPreviewUrl: "",
+    latestGithubRelease: null,
+    releaseBusy: false,
+    lastReleaseSync: 0,
+    timers: { chat: 0, stats: 0, members: 0, heartbeat: 0, pinned: 0, notifications: 0, release: 0 },
     lastAnnouncedId: ""
   };
 
@@ -217,6 +248,304 @@
     return `${text.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
   }
 
+  function formatFileSize(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+  }
+
+  function randomUuid() {
+    if (window.crypto && typeof window.crypto.randomUUID === "function") {
+      return window.crypto.randomUUID();
+    }
+    const bytes = new Uint8Array(16);
+    if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+      window.crypto.getRandomValues(bytes);
+    } else {
+      for (let index = 0; index < bytes.length; index += 1) {
+        bytes[index] = Math.floor(Math.random() * 256);
+      }
+    }
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+  }
+
+  function sanitizeAttachmentName(value) {
+    let name = String(value || "Attachment");
+    try {
+      name = name.normalize("NFKC");
+    } catch (error) {
+      // Older browsers can skip normalization.
+    }
+    return name
+      .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 160) || "Attachment";
+  }
+
+  function attachmentKindFor(type) {
+    const value = String(type || "").toLowerCase();
+    if (INLINE_IMAGE_TYPES.has(value)) return "image";
+    if (value.startsWith("video/")) return "video";
+    return "file";
+  }
+
+  function fileExtension(name, type) {
+    const safe = sanitizeAttachmentName(name);
+    const match = safe.match(/\.([A-Za-z0-9]{1,10})$/);
+    if (match) return match[1].toLowerCase();
+    const subtype = String(type || "").split("/")[1];
+    const cleaned = subtype ? subtype.split("+")[0].replace(/[^A-Za-z0-9]/g, "").slice(0, 10) : "";
+    return cleaned.toLowerCase() || "bin";
+  }
+
+  function guessedMimeType(file) {
+    const explicit = String(file && file.type ? file.type : "").trim().toLowerCase();
+    if (explicit) return explicit;
+    const extension = fileExtension(file && file.name ? file.name : "", "");
+    const types = {
+      jpg: "image/jpeg", jpeg: "image/jpeg", png: "image/png", gif: "image/gif",
+      webp: "image/webp", avif: "image/avif",
+      mp4: "video/mp4", webm: "video/webm", mov: "video/quicktime", m4v: "video/x-m4v",
+      mp3: "audio/mpeg", ogg: "audio/ogg", wav: "audio/wav",
+      pdf: "application/pdf", zip: "application/zip", txt: "text/plain", log: "text/plain"
+    };
+    return types[extension] || "application/octet-stream";
+  }
+
+  function attachmentPublicUrl(path) {
+    return EC.storagePublicUrl(ATTACHMENT_BUCKET, path);
+  }
+
+  function attachmentDownloadUrl(url, name) {
+    if (!url) return "";
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}download=${encodeURIComponent(name)}`;
+  }
+
+  function createFileAttachment(url, name, type, size) {
+    const link = document.createElement("a");
+    link.className = "garage-attachment garage-attachment--file";
+    link.href = attachmentDownloadUrl(url, name);
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.setAttribute("download", name);
+
+    const icon = create("span", "garage-file-icon", fileExtension(name, type).toUpperCase());
+    icon.setAttribute("aria-hidden", "true");
+    link.appendChild(icon);
+
+    const copy = create("span", "garage-file-copy");
+    copy.appendChild(create("strong", "", name));
+    copy.appendChild(create("small", "", `${formatFileSize(size)} · ${type || "file"}`));
+    link.appendChild(copy);
+    link.appendChild(create("span", "garage-file-open", "Open"));
+    return link;
+  }
+
+  function createAttachmentNode(message) {
+    const path = message && message.attachment_path ? String(message.attachment_path) : "";
+    if (!path) return null;
+    const url = attachmentPublicUrl(path);
+    if (!url) return null;
+
+    const name = sanitizeAttachmentName(message.attachment_name || "Attachment");
+    const type = String(message.attachment_type || "application/octet-stream");
+    const size = Number(message.attachment_size) || 0;
+    const kind = message.attachment_kind || attachmentKindFor(type);
+
+    if (kind === "image") {
+      const figure = create("figure", "garage-attachment garage-attachment--image");
+      const link = document.createElement("a");
+      link.className = "garage-attachment-media";
+      link.href = url;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.setAttribute("aria-label", `Open ${name}`);
+      const image = document.createElement("img");
+      image.src = url;
+      image.alt = name;
+      image.loading = "lazy";
+      image.decoding = "async";
+      image.addEventListener("error", () => {
+        figure.replaceWith(createFileAttachment(url, name, type, size));
+      });
+      link.appendChild(image);
+      figure.appendChild(link);
+
+      const caption = create("figcaption", "garage-attachment-caption");
+      caption.appendChild(create("strong", "", name));
+      caption.appendChild(create("small", "", `${formatFileSize(size)} · ${type}`));
+      figure.appendChild(caption);
+      return figure;
+    }
+
+    if (kind === "video") {
+      const wrap = create("div", "garage-attachment garage-attachment--video");
+      const video = document.createElement("video");
+      video.controls = true;
+      video.preload = "metadata";
+      video.playsInline = true;
+      video.setAttribute("playsinline", "");
+      const source = document.createElement("source");
+      source.src = url;
+      source.type = type;
+      video.appendChild(source);
+      video.appendChild(document.createTextNode("Your browser cannot play this video."));
+      wrap.appendChild(video);
+
+      const caption = create("div", "garage-attachment-caption");
+      const copy = create("span", "garage-file-copy");
+      copy.appendChild(create("strong", "", name));
+      copy.appendChild(create("small", "", `${formatFileSize(size)} · ${type}`));
+      caption.appendChild(copy);
+      const open = create("a", "garage-attachment-open", "Open video");
+      open.href = url;
+      open.target = "_blank";
+      open.rel = "noopener noreferrer";
+      caption.appendChild(open);
+      wrap.appendChild(caption);
+      return wrap;
+    }
+
+    return createFileAttachment(url, name, type, size);
+  }
+
+  function renderComposerAttachment() {
+    const box = $("#composerAttachment");
+    const thumb = $("#composerAttachmentThumb");
+    const nameNode = $("#composerAttachmentName");
+    const metaNode = $("#composerAttachmentMeta");
+    if (!box) return;
+
+    const file = state.pendingAttachment;
+    box.hidden = !file;
+    if (!file) {
+      if (thumb) thumb.replaceChildren();
+      return;
+    }
+
+    const type = guessedMimeType(file);
+    const kind = attachmentKindFor(type);
+    if (thumb) {
+      thumb.replaceChildren();
+      if (kind === "image" && state.attachmentPreviewUrl) {
+        const image = document.createElement("img");
+        image.src = state.attachmentPreviewUrl;
+        image.alt = "";
+        thumb.appendChild(image);
+      } else {
+        thumb.appendChild(create(
+          "span",
+          "composer-attachment-badge",
+          kind === "video" ? "VIDEO" : fileExtension(file.name, type).toUpperCase()
+        ));
+      }
+    }
+    if (nameNode) nameNode.textContent = sanitizeAttachmentName(file.name);
+    if (metaNode) metaNode.textContent = `${formatFileSize(file.size)} · ${type}`;
+  }
+
+  function clearPendingAttachment() {
+    if (state.attachmentPreviewUrl) {
+      try {
+        URL.revokeObjectURL(state.attachmentPreviewUrl);
+      } catch (error) {
+        // Ignore revoked URLs.
+      }
+    }
+    state.attachmentPreviewUrl = "";
+    state.pendingAttachment = null;
+    const input = $("#composerFileInput");
+    if (input) input.value = "";
+    renderComposerAttachment();
+  }
+
+  function setPendingAttachment(file) {
+    if (!file || state.sending) return;
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    if (file.size <= 0) {
+      EC.showToast("That file is empty.", 4200);
+      return;
+    }
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      EC.showToast("Attachments must be 2 MB or smaller.", 5200);
+      return;
+    }
+
+    clearPendingAttachment();
+    state.pendingAttachment = file;
+    const type = guessedMimeType(file);
+    if (attachmentKindFor(type) === "image") {
+      try {
+        state.attachmentPreviewUrl = URL.createObjectURL(file);
+      } catch (error) {
+        state.attachmentPreviewUrl = "";
+      }
+    }
+    renderComposerAttachment();
+    announce("Attachment ready to send.");
+  }
+
+  function openAttachmentPicker(accept) {
+    if (state.sending) return;
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    const input = $("#composerFileInput");
+    if (!input) return;
+    input.accept = accept || "*/*";
+    input.value = "";
+    input.click();
+  }
+
+  function handleAttachmentSelection(event) {
+    const input = event.currentTarget;
+    const file = input && input.files && input.files[0];
+    if (file) setPendingAttachment(file);
+    if (input) input.value = "";
+  }
+
+  async function uploadPendingAttachment(file) {
+    const session = await EC.getValidSession();
+    if (!session || !state.user || !state.user.id) {
+      const error = new Error("Sign in required.");
+      error.status = 401;
+      throw error;
+    }
+
+    const name = sanitizeAttachmentName(file.name);
+    const type = guessedMimeType(file);
+    const path = `${state.user.id}/${randomUuid()}.${fileExtension(name, type)}`;
+    await EC.storageUpload(ATTACHMENT_BUCKET, path, file, session, type);
+    return { path, name, type, size: file.size };
+  }
+
+  async function deleteAttachmentIfUnused(path) {
+    if (!path) return;
+    try {
+      const query = new URLSearchParams({
+        select: "id",
+        attachment_path: `eq.${path}`,
+        limit: "1"
+      }).toString();
+      const remaining = await EC.table("chat_messages", query, { auth: false });
+      if (Array.isArray(remaining) && remaining.length) return;
+      const session = await EC.getValidSession();
+      if (session) await EC.storageDelete(ATTACHMENT_BUCKET, path, session);
+    } catch (error) {
+      // Cleanup is best-effort; the message itself is already gone.
+    }
+  }
+
   function activeSessionLabel() {
     if (!state.session) return "Guest";
     return state.me && state.me.display_name
@@ -282,6 +611,11 @@
     if (value === "owner") return "Owner";
     if (value === "admin") return "Admin";
     return "";
+  }
+
+  function isStaff() {
+    const role = String(state.role || "").toLowerCase();
+    return role === "owner" || role === "admin";
   }
 
   function renderAvatar(target, url, name) {
@@ -579,6 +913,11 @@
     updateAuthUI();
     startHeartbeat();
 
+    if (state.session) {
+      loadNotifications({ silent: true });
+      syncLatestRelease();
+    }
+
     const pending = peekCommunityRedirect();
     if (pending && state.session) {
       storageRemove(COMMUNITY_REDIRECT_KEY);
@@ -617,10 +956,18 @@
       state.role = "";
       state.providers = [];
       state.roleByUsername = {};
+      state.notifications = [];
+      state.notificationsUnread = 0;
+      state.notificationsLoaded = false;
+      state.notifiedIds = new Set();
+      state.replyTo = null;
+      clearPendingAttachment();
       if (button) {
         button.disabled = false;
         button.textContent = "Sign out";
       }
+      updateReplyBar();
+      updateNotificationUI();
       updateAuthUI();
       if (state.channel === "bugs") resetBugDesk();
       if (state.messages.length) renderMessages({ silent: true });
@@ -678,6 +1025,8 @@
     });
 
     updateComposerVisibility();
+    updateReleaseButton();
+    updateNotificationUI();
 
     if (state.channel === "bugs") {
       if (signedIn) {
@@ -711,9 +1060,16 @@
     }
   }
 
+  function composerPlaceholder() {
+    if (state.replyTo) {
+      return `Reply to ${state.replyTo.author_name || state.replyTo.author_username || "Rider"}…`;
+    }
+    return `Write to #${CHANNELS[state.channel] ? CHANNELS[state.channel].label : "General"}…`;
+  }
+
   function updateComposerLabels() {
     const input = $("#chatInput");
-    if (input) input.placeholder = `Write to #${CHANNELS[state.channel] ? CHANNELS[state.channel].label : "General"}…`;
+    if (input) input.placeholder = composerPlaceholder();
     const note = $("#chatSlowNote");
     if (note) {
       const slow = state.stats && Number(state.stats.chat_slow_seconds);
@@ -757,13 +1113,8 @@
     setText("#channelTitle", meta.label);
     setText("#channelTopic", meta.topic);
 
-    const pinned = $("#channelPinned");
-    if (pinned) pinned.hidden = channel !== "releases";
-
-    const build = $("#channelPinned [data-pinned-build]");
-    if (build) {
-      build.textContent = `${config.kernel && config.kernel.fallbackBuild ? config.kernel.fallbackBuild : "Latest stable"} — Official Stable`;
-    }
+    renderPinnedBanner(channel);
+    updateReleaseButton();
 
     document.title = `${meta.label} — EXTREME++ The Garage`;
     updateComposerVisibility();
@@ -776,6 +1127,14 @@
     state.channel = next;
     storageSet(CHANNEL_KEY, next);
     closeMembers();
+    closeMessageMenus();
+    clearReplyTarget();
+    clearPendingAttachment();
+
+    if (changed) {
+      state.pinned = null;
+      state.pinnedChannel = "";
+    }
 
     applyChannelUI(next);
     if (options.updateHash !== false) {
@@ -799,6 +1158,7 @@
         silent: false,
         forceScroll: changed || Boolean(options.forceScroll)
       });
+      loadPinnedMessage(next);
     }
   }
 
@@ -898,7 +1258,7 @@
 
   function messageQuery(channel) {
     const params = new URLSearchParams({
-      select: "id,user_id,author_name,author_avatar,author_username,provider,body,channel,created_at,forwarded_from_message_id,forwarded_from_name,forwarded_from_username,forwarded_from_channel,forwarded_at",
+      select: MESSAGE_FIELDS,
       channel: `eq.${channel}`,
       order: "created_at.desc",
       limit: "60"
@@ -955,6 +1315,128 @@
         if (body) body.setAttribute("aria-busy", "false");
       }
     }
+  }
+
+  function updateReleaseButton() {
+    const button = $("#releaseAnnounceBtn");
+    if (!button) return;
+    button.hidden = !(state.channel === "releases" && isStaff());
+  }
+
+  function renderPinnedBanner(channel) {
+    const node = $("#channelPinned");
+    if (!node) return;
+    const meta = CHANNELS[channel] || CHANNELS.general;
+    if (!meta.public) {
+      node.hidden = true;
+      return;
+    }
+
+    const label = $("#pinnedLabel");
+    const title = $("#pinnedTitle");
+    const text = $("#pinnedText");
+    const link = $("#pinnedLink");
+    if (!label || !title || !text || !link) return;
+
+    const pinned = state.pinned && state.pinnedChannel === channel ? state.pinned : null;
+    if (pinned) {
+      node.hidden = false;
+      label.textContent = `PINNED · #${meta.label.toUpperCase()}`;
+      title.textContent = `${pinned.author_name || "Rider"}${pinned.author_username ? ` @${pinned.author_username}` : ""}`;
+      text.textContent = truncate(pinned.body || pinned.attachment_name || "Attachment", 180);
+      link.textContent = "Jump";
+      link.href = `#${channel}`;
+      link.removeAttribute("target");
+      link.removeAttribute("rel");
+      link.setAttribute("data-pin-jump", pinned.id);
+      return;
+    }
+
+    if (channel !== "releases") {
+      node.hidden = true;
+      return;
+    }
+
+    node.hidden = false;
+    label.textContent = "PINNED · LATEST STABLE";
+    title.textContent = `${config.kernel && config.kernel.fallbackBuild ? config.kernel.fallbackBuild : "Latest stable"} — Official Stable`;
+    text.textContent = "Only stable, matching ROM/root builds are listed. Prereleases stay out of the garage.";
+    link.textContent = "Download";
+    link.href = `${(config.links && config.links.kernelReleases) || "https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/releases"}/latest`;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.removeAttribute("data-pin-jump");
+  }
+
+  async function loadPinnedMessage(channel, options = {}) {
+    if (!EC.ready || channel === "bugs") {
+      if (state.channel === channel) {
+        state.pinned = null;
+        state.pinnedChannel = channel;
+        renderPinnedBanner(channel);
+      }
+      return;
+    }
+
+    try {
+      const row = await EC.rpc("community_channel_pinned", { p_channel: channel }, { auth: false });
+      if (state.channel !== channel) return;
+      state.pinned = row && typeof row === "object" ? row : null;
+      state.pinnedChannel = channel;
+      renderPinnedBanner(channel);
+    } catch (error) {
+      if (!options.silent) {
+        console.warn("EXTREME++: pinned message could not load.", error);
+      }
+    }
+  }
+
+  function isPinnedMessage(message) {
+    return Boolean(message && (message.pinned_at || (state.pinned && state.pinned.id === message.id)));
+  }
+
+  function scrollToMessage(id) {
+    if (!id) return;
+    const article = document.querySelector(`[data-message-id="${CSS.escape(String(id))}"]`);
+    if (!article) {
+      EC.showToast("That message is older than the loaded history.", 4200);
+      return;
+    }
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    article.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+    article.classList.add("is-highlighted");
+    window.setTimeout(() => article.classList.remove("is-highlighted"), 1900);
+  }
+
+  function updateReplyBar() {
+    const bar = $("#composerReply");
+    if (!bar) return;
+    const message = state.replyTo;
+    bar.hidden = !message;
+    if (!message) return;
+    const author = $("#composerReplyAuthor");
+    const text = $("#composerReplyText");
+    if (author) author.textContent = message.author_name || message.author_username || "Rider";
+    if (text) text.textContent = truncate(message.body || message.attachment_name || "Attachment", 140);
+  }
+
+  function setReplyTarget(message) {
+    if (!message) return;
+    state.replyTo = message;
+    updateReplyBar();
+    updateComposerLabels();
+    const input = $("#chatInput");
+    if (input) input.focus({ preventScroll: true });
+  }
+
+  function clearReplyTarget() {
+    if (!state.replyTo) {
+      updateReplyBar();
+      return;
+    }
+    state.replyTo = null;
+    updateReplyBar();
+    updateComposerLabels();
   }
 
   function renderMessages(options = {}) {
@@ -1047,6 +1529,16 @@
     wrap.appendChild(head);
 
     const bubble = create("div", "garage-bubble");
+    if (message.reply_to_message_id) {
+      const quote = create("button", "garage-reply-quote");
+      quote.type = "button";
+      quote.setAttribute("data-reply-jump", message.reply_to_message_id);
+      quote.setAttribute("aria-label", `Jump to the message from ${message.reply_to_author_name || "Rider"}`);
+      quote.appendChild(create("small", "", `Replying to ${message.reply_to_author_name || message.reply_to_author_username || "Rider"}`));
+      quote.appendChild(create("span", "", message.reply_to_excerpt || "Original message"));
+      bubble.appendChild(quote);
+    }
+
     if (message.forwarded_from_channel) {
       const forward = create("div", "garage-forwarded");
       forward.appendChild(create("small", "", `Forwarded from #${CHANNELS[message.forwarded_from_channel] ? CHANNELS[message.forwarded_from_channel].label : message.forwarded_from_channel}`));
@@ -1054,12 +1546,18 @@
       bubble.appendChild(forward);
     }
 
-    bubble.appendChild(create("div", "garage-message-body", message.body));
+    if (String(message.body || "").trim()) {
+      bubble.appendChild(create("div", "garage-message-body", message.body));
+    }
+    const attachment = createAttachmentNode(message);
+    if (attachment) bubble.appendChild(attachment);
     const foot = create("div", "garage-bubble-foot");
     const time = create("time", "", formatTime(message.created_at));
     time.dateTime = String(message.created_at || "");
     foot.appendChild(time);
     if (message.forwarded_at) foot.appendChild(create("span", "", "forwarded"));
+    if (isPinnedMessage(message)) foot.appendChild(create("span", "garage-pinned-tag", "pinned"));
+    if (message.is_release_announcement) foot.appendChild(create("span", "garage-release-tag", "stable"));
     bubble.appendChild(foot);
     wrap.appendChild(bubble);
     article.appendChild(wrap);
@@ -1077,6 +1575,10 @@
 
     const menu = create("div", "garage-menu");
     menu.setAttribute("role", "menu");
+    menu.appendChild(menuButton("reply", "Reply", MENU_ICONS.reply));
+    if (isStaff()) {
+      menu.appendChild(menuButton("pin", isPinnedMessage(message) ? "Unpin" : "Pin", MENU_ICONS.pin));
+    }
     menu.appendChild(menuButton("forward", "Forward", MENU_ICONS.forward));
     menu.appendChild(menuButton("copy", "Copy text", MENU_ICONS.copy));
     if (!own) menu.appendChild(menuButton("report", "Report", MENU_ICONS.report));
@@ -1172,14 +1674,57 @@
     const message = messageById(id);
     if (!message) return;
     closeMessageMenus();
-    if (action === "forward") openForwardDialog(message);
+    if (action === "reply") setReplyTarget(message);
+    else if (action === "pin") pinMessage(message);
+    else if (action === "forward") openForwardDialog(message);
     else if (action === "copy") copyMessage(message);
     else if (action === "report") openReportDialog(message);
     else if (action === "delete") deleteMessage(message);
   }
 
+  async function pinMessage(message) {
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    if (!isStaff()) {
+      EC.showToast("Only staff can pin messages.", 4200);
+      return;
+    }
+
+    const pinned = isPinnedMessage(message);
+    try {
+      const result = await EC.rpc("community_pin_message", {
+        p_message_id: message.id,
+        p_pinned: !pinned
+      }, { session: state.session });
+
+      if (result && result.pinned) {
+        message.pinned_at = result.pinned_at || new Date().toISOString();
+        state.messages.forEach((item) => {
+          if (item.id !== message.id) item.pinned_at = null;
+        });
+      } else {
+        message.pinned_at = null;
+      }
+
+      await loadPinnedMessage(state.channel, { silent: true });
+      renderMessages({ silent: true });
+      announce(pinned ? "Message unpinned." : "Message pinned.");
+      EC.showToast(pinned ? "Message unpinned." : "Message pinned for this channel.", 3200);
+    } catch (error) {
+      EC.showToast(error && error.status === 403
+        ? "Only staff can pin messages."
+        : "That message could not be pinned.", 4800);
+    }
+  }
+
   async function copyMessage(message) {
-    const text = String(message.body || "");
+    const baseUrl = message.attachment_path ? attachmentPublicUrl(message.attachment_path) : "";
+    const attachmentUrl = baseUrl && message.attachment_kind === "file"
+      ? attachmentDownloadUrl(baseUrl, sanitizeAttachmentName(message.attachment_name || "Attachment"))
+      : baseUrl;
+    const text = [String(message.body || "").trim(), attachmentUrl].filter(Boolean).join("\n");
     try {
       if (navigator.clipboard && typeof navigator.clipboard.writeText === "function") {
         await navigator.clipboard.writeText(text);
@@ -1215,6 +1760,11 @@
       state.messages = state.messages.filter((item) => item.id !== message.id);
       renderMessages({ silent: true });
       loadStats();
+      if (message.attachment_path
+        && state.user
+        && (isStaff() || String(message.attachment_path).startsWith(`${state.user.id}/`))) {
+        deleteAttachmentIfUnused(message.attachment_path);
+      }
       EC.showToast("Message deleted.", 3200);
     } catch (error) {
       EC.showToast(error && error.status === 403
@@ -1240,7 +1790,7 @@
     if (preview) {
       preview.replaceChildren();
       preview.appendChild(create("small", "", `#${CHANNELS[message.channel] ? CHANNELS[message.channel].label : message.channel} · ${message.author_name || "Rider"}`));
-      preview.appendChild(document.createTextNode(truncate(message.body, 320)));
+      preview.appendChild(document.createTextNode(truncate(message.body || message.attachment_name || "Attachment", 320)));
     }
 
     const channels = $("#forwardChannels");
@@ -1565,7 +2115,8 @@
     const input = $("#chatInput");
     const button = $("#chatSend");
     const body = input ? input.value.trim() : "";
-    if (!body) {
+    const file = state.pendingAttachment;
+    if (!body && !file) {
       if (input) input.focus();
       return;
     }
@@ -1576,19 +2127,37 @@
 
     state.sending = true;
     let sent = false;
-    EC.setBusy(button, true, "Sending…");
+    let uploaded = null;
+    const replyTarget = state.replyTo;
+    EC.setBusy(button, true, file ? "Uploading…" : "Sending…");
     try {
+      if (file) {
+        uploaded = await uploadPendingAttachment(file);
+        EC.setBusy(button, true, "Sending…");
+      }
+
+      const payload = { body, channel: state.channel };
+      if (uploaded) {
+        payload.attachment_path = uploaded.path;
+        payload.attachment_name = uploaded.name;
+        payload.attachment_type = uploaded.type;
+        payload.attachment_size = uploaded.size;
+      }
+      if (replyTarget) payload.reply_to_message_id = replyTarget.id;
+
       const rows = await EC.table("chat_messages", "", {
         method: "POST",
         auth: true,
         headers: { Prefer: "return=representation" },
-        body: { body, channel: state.channel }
+        body: payload
       });
       if (input) {
         input.value = "";
         input.style.height = "auto";
       }
       setText("#chatCharCount", "0");
+      clearReplyTarget();
+      clearPendingAttachment();
       if (Array.isArray(rows) && rows[0]) {
         state.messages.push(rows[0]);
         renderMessages({ forceScroll: true });
@@ -1600,9 +2169,11 @@
       loadStats();
       if (input) input.focus({ preventScroll: true });
     } catch (error) {
+      if (uploaded && uploaded.path) deleteAttachmentIfUnused(uploaded.path);
       let message = error && error.message ? error.message : "The message could not be sent.";
       if (error && error.status === 401) message = "Your session expired. Sign in again.";
       if (error && error.status === 403) message = "Your account is restricted from posting.";
+      if (error && error.status === 413) message = "Attachments must be 2 MB or smaller.";
       if (error && error.status === 429) {
         const seconds = Math.max(1, Number(state.stats && state.stats.chat_slow_seconds) || 5);
         startCooldown(seconds);
@@ -1673,7 +2244,543 @@
         if (!state.sending && Date.now() >= state.cooldownUntil) form.requestSubmit();
       }
     });
+    const replyCancel = $("#composerReplyCancel");
+    if (replyCancel) {
+      replyCancel.addEventListener("click", () => {
+        clearReplyTarget();
+        input.focus({ preventScroll: true });
+      });
+    }
+
+    const photoButton = $("#composerPhoto");
+    if (photoButton) {
+      photoButton.addEventListener("click", () => openAttachmentPicker("image/*,video/*"));
+    }
+    const fileButton = $("#composerFile");
+    if (fileButton) {
+      fileButton.addEventListener("click", () => openAttachmentPicker("*/*"));
+    }
+    const fileInput = $("#composerFileInput");
+    if (fileInput) fileInput.addEventListener("change", handleAttachmentSelection);
+    const removeAttachment = $("#composerAttachmentRemove");
+    if (removeAttachment) {
+      removeAttachment.addEventListener("click", () => {
+        if (state.sending) return;
+        clearPendingAttachment();
+        input.focus({ preventScroll: true });
+      });
+    }
+
+    input.addEventListener("paste", (event) => {
+      const files = event.clipboardData && event.clipboardData.files;
+      if (!files || !files.length) return;
+      event.preventDefault();
+      if (files.length > 1) EC.showToast("Send one attachment per message.", 4200);
+      setPendingAttachment(files[0]);
+    });
+
+    const hasFileDrag = (event) => Boolean(
+      event.dataTransfer
+      && Array.from(event.dataTransfer.types || []).includes("Files")
+    );
+    let dragDepth = 0;
+    form.addEventListener("dragenter", (event) => {
+      if (!state.session || !hasFileDrag(event)) return;
+      event.preventDefault();
+      dragDepth += 1;
+      form.classList.add("is-dragover");
+    });
+    form.addEventListener("dragover", (event) => {
+      if (!state.session || !hasFileDrag(event)) return;
+      event.preventDefault();
+      if (event.dataTransfer) event.dataTransfer.dropEffect = "copy";
+    });
+    form.addEventListener("dragleave", () => {
+      dragDepth = Math.max(0, dragDepth - 1);
+      if (!dragDepth) form.classList.remove("is-dragover");
+    });
+    form.addEventListener("drop", (event) => {
+      if (!state.session || !hasFileDrag(event)) return;
+      event.preventDefault();
+      dragDepth = 0;
+      form.classList.remove("is-dragover");
+      const files = event.dataTransfer && event.dataTransfer.files;
+      if (!files || !files.length) return;
+      if (files.length > 1) EC.showToast("Send one attachment per message.", 4200);
+      setPendingAttachment(files[0]);
+    });
+
+    updateReplyBar();
+    renderComposerAttachment();
     resizeComposer();
+  }
+
+  /* =========================================================
+     Notifications, browser alerts and release broadcasts
+     ========================================================= */
+
+  function registerServiceWorker() {
+    if (!("serviceWorker" in navigator) || window.location.protocol !== "https:") return;
+    navigator.serviceWorker.register("./sw.js").catch((error) => {
+      console.warn("EXTREME++: service worker could not register.", error);
+    });
+  }
+
+  function notificationUrl(notification) {
+    const fallback = new URL("./community.html", window.location.href).href;
+    const raw = notification && notification.link ? String(notification.link) : "";
+    if (!raw) return fallback;
+    try {
+      const url = new URL(raw, window.location.href);
+      return url.origin === window.location.origin ? url.href : fallback;
+    } catch (error) {
+      return fallback;
+    }
+  }
+
+  function showBrowserNotification(notification) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const title = notification && notification.title ? String(notification.title) : "EXTREME++";
+    const options = {
+      body: notification && notification.body ? String(notification.body) : "",
+      icon: new URL("./assets/img/icon-192.png", window.location.href).href,
+      badge: new URL("./assets/img/icon-192.png", window.location.href).href,
+      tag: `extreme-${notification && notification.id ? notification.id : Date.now()}`,
+      data: { url: notificationUrl(notification) },
+      renotify: false
+    };
+
+    try {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.ready
+          .then((registration) => registration.showNotification(title, options))
+          .catch(() => {
+            try {
+              new Notification(title, options);
+            } catch (error) {
+              // Browser notification support is optional.
+            }
+          });
+      } else {
+        new Notification(title, options);
+      }
+    } catch (error) {
+      // Notifications are an enhancement; never break the page.
+    }
+  }
+
+  function updateNotificationPermissionUI() {
+    const button = $("#notificationEnable");
+    const note = $("#notificationPermissionNote");
+    if (!button || !note) return;
+
+    if (!("Notification" in window)) {
+      button.hidden = true;
+      note.textContent = "This browser does not support system notifications. In-app notifications still work.";
+      return;
+    }
+
+    button.hidden = false;
+    const permission = Notification.permission;
+    if (permission === "granted") {
+      button.textContent = "Browser alerts on";
+      button.disabled = true;
+      note.textContent = "Browser alerts are on for this device. Replies and stable releases can appear outside the tab.";
+    } else if (permission === "denied") {
+      button.textContent = "Alerts blocked";
+      button.disabled = true;
+      note.textContent = "Browser alerts are blocked in browser settings. In-app notifications still work.";
+    } else {
+      button.textContent = "Enable browser alerts";
+      button.disabled = false;
+      note.textContent = "Browser alerts are off. Enable them to get replies and stable-release alerts outside the tab.";
+    }
+  }
+
+  async function enableBrowserAlerts() {
+    if (!("Notification" in window)) {
+      EC.showToast("This browser does not support system notifications.", 4600);
+      return;
+    }
+    if (Notification.permission === "denied") {
+      EC.showToast("Browser alerts are blocked in your browser settings.", 5200);
+      updateNotificationPermissionUI();
+      return;
+    }
+
+    try {
+      const permission = await Notification.requestPermission();
+      updateNotificationPermissionUI();
+      if (permission === "granted") {
+        registerServiceWorker();
+        EC.showToast("Browser alerts enabled for this device.", 4600);
+        showBrowserNotification({
+          id: `welcome-${Date.now()}`,
+          title: "Browser alerts enabled",
+          body: "You will be notified about replies and new stable releases.",
+          link: "./community.html"
+        });
+      } else {
+        EC.showToast("Browser alerts were not enabled.", 4200);
+      }
+    } catch (error) {
+      EC.showToast("Browser alerts could not be enabled.", 4600);
+    }
+  }
+
+  function updateNotificationUI() {
+    const button = $("#communityNotificationsBtn");
+    const count = $("#communityNotificationCount");
+    const unread = state.session ? Math.max(0, Number(state.notificationsUnread) || 0) : 0;
+
+    if (count) {
+      count.hidden = unread <= 0;
+      count.textContent = unread > 99 ? "99+" : String(unread);
+    }
+    if (button) {
+      button.classList.toggle("has-unread", unread > 0);
+      button.setAttribute("aria-label", unread > 0 ? `Notifications, ${unread} unread` : "Notifications");
+    }
+
+    const unreadLabel = $("#notificationUnreadLabel");
+    if (unreadLabel) unreadLabel.textContent = unread > 0 ? `${unread} unread` : "No unread notifications";
+    const markButton = $("#notificationMarkRead");
+    if (markButton) markButton.disabled = unread <= 0;
+    updateNotificationPermissionUI();
+  }
+
+  function renderNotifications() {
+    const list = $("#notificationList");
+    if (!list) return;
+    list.replaceChildren();
+
+    if (!state.session) {
+      list.appendChild(create("p", "notification-empty", "Sign in to see replies and release alerts."));
+      return;
+    }
+    if (!state.notifications.length) {
+      list.appendChild(create("p", "notification-empty", "No notifications yet. Replies and new stable releases will appear here."));
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    state.notifications.forEach((notification) => {
+      if (!notification || !notification.id) return;
+      const item = document.createElement("button");
+      item.type = "button";
+      item.className = "notification-item" + (notification.read_at ? "" : " is-unread");
+      item.setAttribute("data-notification-id", notification.id);
+      item.setAttribute("data-notification-channel", notification.channel || "");
+      item.setAttribute("data-notification-message", notification.message_id || "");
+      item.setAttribute("data-notification-link", notification.link || "");
+
+      const icon = create(
+        "span",
+        `notification-icon notification-icon--${notification.type || "system"}`,
+        notification.type === "release" ? "★" : notification.type === "reply" ? "↩" : "•"
+      );
+      icon.setAttribute("aria-hidden", "true");
+      item.appendChild(icon);
+
+      const copy = create("span", "notification-copy");
+      copy.appendChild(create("strong", "", notification.title || "Notification"));
+      if (notification.body) copy.appendChild(create("span", "", notification.body));
+      const kind = notification.type === "release" ? "Release" : notification.type === "reply" ? "Reply" : "Update";
+      copy.appendChild(create("small", "", `${kind} · ${EC.relativeTime(notification.created_at)}`));
+      item.appendChild(copy);
+
+      fragment.appendChild(item);
+    });
+    list.appendChild(fragment);
+  }
+
+  async function loadNotifications(options = {}) {
+    if (!EC.ready || !state.session) {
+      state.notifications = [];
+      state.notificationsUnread = 0;
+      state.notificationsLoaded = false;
+      state.notifiedIds = new Set();
+      updateNotificationUI();
+      renderNotifications();
+      return;
+    }
+
+    try {
+      const session = await EC.getValidSession();
+      if (!session) {
+        state.session = null;
+        state.notifications = [];
+        state.notificationsUnread = 0;
+        state.notificationsLoaded = false;
+        state.notifiedIds = new Set();
+        updateNotificationUI();
+        renderNotifications();
+        return;
+      }
+      state.session = session;
+
+      const data = await EC.rpc("community_get_notifications", { p_limit: 30 }, { session });
+      const items = data && Array.isArray(data.items) ? data.items : [];
+      const unread = data && Number.isFinite(Number(data.unread))
+        ? Number(data.unread)
+        : items.filter((item) => !item.read_at).length;
+
+      const firstLoad = !state.notificationsLoaded;
+      const fresh = [];
+      items.forEach((notification) => {
+        if (!notification || !notification.id) return;
+        if (state.notifiedIds.has(notification.id)) return;
+        state.notifiedIds.add(notification.id);
+        if (!firstLoad && !notification.read_at) fresh.push(notification);
+      });
+
+      state.notifications = items;
+      state.notificationsUnread = unread;
+      state.notificationsLoaded = true;
+      updateNotificationUI();
+      renderNotifications();
+
+      if (fresh.length) {
+        fresh.slice(0, 3).forEach(showBrowserNotification);
+        const latest = fresh[0];
+        if (document.visibilityState !== "hidden") {
+          EC.showToast(latest.title || "New notification", 5200);
+          announce(latest.title || "New notification");
+        }
+      }
+    } catch (error) {
+      if (!options.silent) {
+        console.warn("EXTREME++: notifications could not load.", error);
+      }
+      if (error && error.status === 401) {
+        state.session = null;
+        state.notifications = [];
+        state.notificationsUnread = 0;
+        state.notificationsLoaded = false;
+        state.notifiedIds = new Set();
+        updateNotificationUI();
+        renderNotifications();
+        updateAuthUI();
+      }
+    }
+  }
+
+  async function markNotificationsRead(ids) {
+    if (!state.session) return 0;
+    const all = !ids || !ids.length;
+    try {
+      const payload = all ? {} : { p_ids: ids };
+      const count = await EC.rpc("community_mark_notifications_read", payload, { session: state.session });
+      const now = new Date().toISOString();
+      const selected = new Set(ids || []);
+      state.notifications = state.notifications.map((notification) => {
+        if (!all && !selected.has(notification.id)) return notification;
+        return notification.read_at ? notification : { ...notification, read_at: now };
+      });
+      state.notificationsUnread = all
+        ? 0
+        : Math.max(0, state.notificationsUnread - (Number(count) || 0));
+      updateNotificationUI();
+      renderNotifications();
+      return Number(count) || 0;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  async function openNotifications() {
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    const dialog = $("#notificationDialog");
+    if (!dialog) return;
+    await loadNotifications({ silent: true });
+    renderNotifications();
+    updateNotificationPermissionUI();
+    showDialog(dialog, document.activeElement, "[data-notification-id], #notificationDialogClose");
+    if (state.notificationsUnread > 0) {
+      await markNotificationsRead();
+    }
+  }
+
+  async function openNotificationItem(button) {
+    if (!button) return;
+    const id = button.getAttribute("data-notification-id");
+    const channel = button.getAttribute("data-notification-channel");
+    const messageId = button.getAttribute("data-notification-message");
+    const link = button.getAttribute("data-notification-link");
+    if (id) await markNotificationsRead([id]);
+    closeDialog($("#notificationDialog"));
+
+    if (CHANNELS[channel]) {
+      switchChannel(channel, { updateHash: true });
+      if (messageId) {
+        window.setTimeout(() => scrollToMessage(messageId), 480);
+      }
+      return;
+    }
+    if (link) {
+      window.location.assign(notificationUrl({ link }));
+    }
+  }
+
+  /* =========================================================
+     GitHub stable release sync
+     ========================================================= */
+
+  async function fetchLatestGithubRelease() {
+    const owner = (config.kernel && config.kernel.owner) || "PandeyJI-9";
+    const repo = (config.kernel && config.kernel.repo) || "Extreme-PLUS-kernel-munch";
+    const response = await fetch(
+      `https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/releases?per_page=5`,
+      {
+        headers: { Accept: "application/vnd.github+json" },
+        cache: "no-store"
+      }
+    );
+    if (!response.ok) throw new Error(`GitHub returned ${response.status}.`);
+    const releases = await response.json();
+    if (!Array.isArray(releases)) return null;
+    return releases.find((release) => release && release.tag_name && !release.draft && !release.prerelease) || null;
+  }
+
+  async function syncLatestRelease(options = {}) {
+    if (!state.session || !isStaff()) return;
+    const now = Date.now();
+    if (!options.force && now - state.lastReleaseSync < RELEASE_SYNC_MS) return;
+    state.lastReleaseSync = now;
+
+    try {
+      const release = await fetchLatestGithubRelease();
+      if (!release) return;
+      state.latestGithubRelease = release;
+
+      const result = await EC.rpc("community_announce_release", {
+        p_tag: release.tag_name,
+        p_name: release.name || release.tag_name,
+        p_url: release.html_url || `${(config.links && config.links.kernelReleases) || "https://github.com/PandeyJI-9/Extreme-PLUS-kernel-munch/releases"}/tag/${encodeURIComponent(release.tag_name)}`,
+        p_body: release.body || "",
+        p_published_at: release.published_at || release.created_at || null
+      }, { session: state.session });
+
+      if (result && result.created) {
+        EC.showToast(`Release announced to ${Number(result.notifications) || 0} members.`, 6000);
+        if (state.channel === "releases") {
+          await loadMessages({ silent: true, forceScroll: true });
+          await loadPinnedMessage("releases", { silent: true });
+        }
+        loadNotifications({ silent: true });
+        loadStats();
+      }
+    } catch (error) {
+      // GitHub or API failures are non-fatal. The Postgres watcher retries.
+      console.warn("EXTREME++: release sync skipped.", error);
+    }
+  }
+
+  function prefillReleaseForm() {
+    const release = state.latestGithubRelease;
+    if (!release) return;
+    const title = $("#releaseTitle");
+    const tag = $("#releaseTag");
+    const url = $("#releaseUrl");
+    const notes = $("#releaseNotes");
+    if (title && !title.value) title.value = release.name || release.tag_name || "";
+    if (tag && !tag.value) tag.value = release.tag_name || "";
+    if (url && !url.value) url.value = release.html_url || "";
+    if (notes && !notes.value) notes.value = release.body || "";
+  }
+
+  async function openReleaseDialog() {
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    if (!isStaff()) {
+      EC.showToast("Only staff can announce releases.", 4200);
+      return;
+    }
+    const dialog = $("#releaseDialog");
+    if (!dialog) return;
+    clearFormStatus($("#releaseStatus"));
+    prefillReleaseForm();
+    showDialog(dialog, document.activeElement, "#releaseTitle");
+
+    if (!state.latestGithubRelease) {
+      try {
+        const release = await fetchLatestGithubRelease();
+        if (release) {
+          state.latestGithubRelease = release;
+          prefillReleaseForm();
+        }
+      } catch (error) {
+        // The form still works manually.
+      }
+    }
+  }
+
+  async function submitRelease(event) {
+    event.preventDefault();
+    if (state.releaseBusy) return;
+    if (!state.session) {
+      openAuthDialog();
+      return;
+    }
+    if (!isStaff()) {
+      EC.showToast("Only staff can announce releases.", 4200);
+      return;
+    }
+
+    const title = ($("#releaseTitle") && $("#releaseTitle").value || "").trim();
+    const tag = ($("#releaseTag") && $("#releaseTag").value || "").trim();
+    const url = ($("#releaseUrl") && $("#releaseUrl").value || "").trim();
+    const notes = ($("#releaseNotes") && $("#releaseNotes").value || "").trim();
+    const status = $("#releaseStatus");
+    const submit = $("#releaseSubmit");
+
+    if (!title || !tag || !url) {
+      setFormStatus(status, "Add a title, tag and release URL.", "error");
+      return;
+    }
+    if (!/^https?:\/\//i.test(url)) {
+      setFormStatus(status, "The release URL must start with http:// or https://.", "error");
+      return;
+    }
+
+    state.releaseBusy = true;
+    EC.setBusy(submit, true, "Announcing…");
+    try {
+      const result = await EC.rpc("community_announce_release", {
+        p_tag: tag,
+        p_name: title,
+        p_url: url,
+        p_body: notes,
+        p_published_at: null
+      }, { session: state.session });
+
+      if (result && result.created) {
+        closeDialog($("#releaseDialog"));
+        EC.showToast(`Release announced to ${Number(result.notifications) || 0} members.`, 5600);
+        if (state.channel === "releases") {
+          await loadMessages({ silent: true, forceScroll: true });
+          await loadPinnedMessage("releases", { silent: true });
+        }
+        loadNotifications({ silent: true });
+        loadStats();
+      } else if (result && result.reason === "already_announced") {
+        setFormStatus(status, "That release tag was already announced.", "info");
+      } else {
+        setFormStatus(status, "The release could not be announced.", "error");
+      }
+    } catch (error) {
+      setFormStatus(status, error && error.status === 403
+        ? "Only staff can announce releases."
+        : "The release could not be announced.", "error");
+    } finally {
+      state.releaseBusy = false;
+      EC.setBusy(submit, false);
+    }
   }
 
   function openMembers() {
@@ -1722,6 +2829,8 @@
     initDialogChrome($("#bugDialog"), "#bugDialogClose");
     initDialogChrome($("#forwardDialog"), "#forwardDialogClose");
     initDialogChrome($("#reportDialog"), "#reportDialogClose");
+    initDialogChrome($("#notificationDialog"), "#notificationDialogClose");
+    initDialogChrome($("#releaseDialog"), "#releaseDialogClose");
 
     $$("[data-community-auth], #communityAccount").forEach((button) => {
       button.addEventListener("click", openAuthDialog);
@@ -1736,6 +2845,17 @@
     if (forwardForm) forwardForm.addEventListener("submit", submitForward);
     const reportForm = $("#reportForm");
     if (reportForm) reportForm.addEventListener("submit", submitReport);
+    const releaseForm = $("#releaseForm");
+    if (releaseForm) releaseForm.addEventListener("submit", submitRelease);
+
+    const notificationsButton = $("#communityNotificationsBtn");
+    if (notificationsButton) notificationsButton.addEventListener("click", openNotifications);
+    const releaseButton = $("#releaseAnnounceBtn");
+    if (releaseButton) releaseButton.addEventListener("click", openReleaseDialog);
+    const enableButton = $("#notificationEnable");
+    if (enableButton) enableButton.addEventListener("click", enableBrowserAlerts);
+    const markReadButton = $("#notificationMarkRead");
+    if (markReadButton) markReadButton.addEventListener("click", () => markNotificationsRead());
 
     const description = $("#bugDescription");
     if (description) {
@@ -1778,6 +2898,27 @@
       if (bugOpen) {
         event.preventDefault();
         openBugDialog();
+        return;
+      }
+
+      const notificationItem = event.target.closest("[data-notification-id]");
+      if (notificationItem) {
+        event.preventDefault();
+        openNotificationItem(notificationItem);
+        return;
+      }
+
+      const pinJump = event.target.closest("[data-pin-jump]");
+      if (pinJump) {
+        event.preventDefault();
+        scrollToMessage(pinJump.getAttribute("data-pin-jump"));
+        return;
+      }
+
+      const replyJump = event.target.closest("[data-reply-jump]");
+      if (replyJump) {
+        event.preventDefault();
+        scrollToMessage(replyJump.getAttribute("data-reply-jump"));
         return;
       }
 
@@ -1830,9 +2971,12 @@
 
     document.addEventListener("keydown", (event) => {
       if (event.key === "Escape") {
+        const hadDialog = $$("dialog[open]").length > 0;
+        const hadMenu = Boolean(state.activeMenuId);
         closeMessageMenus();
         closeMembers();
         $$("dialog[open]").forEach((dialog) => closeDialog(dialog));
+        if (!hadDialog && !hadMenu && state.replyTo) clearReplyTarget();
       }
     });
 
@@ -1847,18 +2991,23 @@
       if (document.visibilityState !== "visible") return;
       loadStats();
       loadMembers();
+      loadNotifications({ silent: true });
+      if (isStaff()) syncLatestRelease();
       if (state.channel === "bugs") {
         if (state.session) loadBugReports();
       } else {
         loadMessages({ silent: true });
+        loadPinnedMessage(state.channel, { silent: true });
       }
     });
 
     window.addEventListener("online", () => {
+      loadNotifications({ silent: true });
       if (state.channel === "bugs") {
         if (state.session) loadBugReports();
       } else {
         loadMessages({ silent: true });
+        loadPinnedMessage(state.channel, { silent: true });
       }
     });
   }
@@ -1920,6 +3069,9 @@
     window.clearInterval(state.timers.chat);
     window.clearInterval(state.timers.stats);
     window.clearInterval(state.timers.members);
+    window.clearInterval(state.timers.pinned);
+    window.clearInterval(state.timers.notifications);
+    window.clearInterval(state.timers.release);
 
     state.timers.chat = window.setInterval(() => {
       if (document.visibilityState === "hidden") return;
@@ -1933,6 +3085,19 @@
     state.timers.members = window.setInterval(() => {
       if (document.visibilityState !== "hidden") loadMembers();
     }, MEMBERS_POLL_MS);
+
+    state.timers.pinned = window.setInterval(() => {
+      if (document.visibilityState === "hidden") return;
+      if (state.channel !== "bugs") loadPinnedMessage(state.channel, { silent: true });
+    }, PINNED_POLL_MS);
+
+    state.timers.notifications = window.setInterval(() => {
+      if (state.session) loadNotifications({ silent: true });
+    }, NOTIFICATIONS_POLL_MS);
+
+    state.timers.release = window.setInterval(() => {
+      if (isStaff()) syncLatestRelease();
+    }, RELEASE_SYNC_MS);
   }
 
   function init() {
@@ -1944,6 +3109,9 @@
     initDelegatedEvents();
     applyChannelUI(state.channel);
     updateAuthUI();
+    updateNotificationPermissionUI();
+    renderNotifications();
+    registerServiceWorker();
     startPolling();
     loadStats();
     loadMembers();

@@ -1389,16 +1389,24 @@
     container.replaceChildren(fragment);
   }
 
+  function romDisplayLabel(value = state.rom) {
+    if (value === "AOSP") return "AOSP / Custom ROM";
+    if (value === "OEM") return "ColorOS / OEM port";
+    return "Modded HyperOS";
+  }
+
   function findReleaseAsset() {
     if (!Array.isArray(state.assets) || !state.assets.length) return null;
 
     const zips = state.assets.filter((asset) => /\.zip$/i.test(asset.name || ""));
     if (!zips.length) return null;
 
+    // ColorOS and every OEM port ROM resolve to the HyperOS package. Only a
+    // clean AOSP-based custom ROM may use the AOSP package.
     const romToken = state.rom === "AOSP" ? "aosp" : "hyperos";
     const candidates = zips.filter((asset) => asset.name.toLowerCase().includes(romToken));
     // Never fall back to the other ROM family: flashing an AOSP package over
-    // HyperOS (or the reverse) is not a safe substitution.
+    // HyperOS/OEM (or the reverse) is not a safe substitution.
     if (!candidates.length) return null;
 
     const rootMatcher = (asset) => {
@@ -1492,7 +1500,7 @@
 
     const meta = create("div", "match-meta");
     meta.appendChild(create("span", "", formatBytes(asset.size)));
-    meta.appendChild(create("span", "", state.rom === "AOSP" ? "AOSP" : "Modded HyperOS"));
+    meta.appendChild(create("span", "", romDisplayLabel()));
     meta.appendChild(create("span", "", ROOT_LABELS[state.root]));
     if (typeof asset.download_count === "number") {
       meta.appendChild(create("span", "", `${formatNumber(asset.download_count)} downloads`));
@@ -1651,10 +1659,14 @@
     $$("[data-pick-rom]").forEach((button) => {
       button.addEventListener("click", () => {
         const rom = button.dataset.pickRom;
-        state.rom = rom === "AOSP" ? "AOSP" : "HyperOS";
+        state.rom = rom === "AOSP" ? "AOSP" : rom === "OEM" ? "OEM" : "HyperOS";
         updateDownloadPicker();
         if (state.githubLoaded) renderMatchedAsset(findReleaseAsset());
-        showToast(`${state.rom === "AOSP" ? "AOSP / custom ROM" : "Modded HyperOS"} selected in the download matcher.`);
+        if (state.rom === "OEM") {
+          showToast("ColorOS / OEM port selected — using the HyperOS package.");
+        } else {
+          showToast(`${romDisplayLabel()} selected in the download matcher.`);
+        }
         scrollToSection("downloads");
       });
     });
@@ -3116,7 +3128,11 @@
     const romSelect = $("#reviewRom");
     const rootSelect = $("#reviewRoot");
     if (romSelect && !state.reviewRomTouched) {
-      romSelect.value = state.rom === "AOSP" ? "AOSP / Custom ROM" : "Modded HyperOS";
+      romSelect.value = state.rom === "AOSP"
+        ? "AOSP / Custom ROM"
+        : state.rom === "OEM"
+          ? "ColorOS port"
+          : "Modded HyperOS";
     }
     if (rootSelect && !state.reviewRootTouched) {
       rootSelect.value = ROOT_LABELS[state.root] || "KowSU + SuSFS";

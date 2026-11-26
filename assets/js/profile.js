@@ -103,10 +103,14 @@
 
     list.forEach((item) => {
       const article = create("article", "profile-feed-item");
-      const body = type === "review" ? item.body : item.body;
-      article.appendChild(create("p", "", String(body || "")));
+      const body = String(item.body || "").trim()
+        || (item.attachment_name ? `Attachment: ${item.attachment_name}` : "");
+      article.appendChild(create("p", "", body));
 
       const meta = create("div", "profile-feed-meta");
+      if (type === "chat" && item.attachment_kind) {
+        meta.appendChild(create("span", "", `${item.attachment_kind} attachment`));
+      }
       if (type === "review") {
         const rating = Number(item.rating);
         if (Number.isInteger(rating) && rating >= 1 && rating <= 5) {

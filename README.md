@@ -9,10 +9,12 @@ Pure HTML, CSS and vanilla JavaScript. No framework, no bundler and no npm build
 - Dark and light themes with system-preference detection, a persisted toggle and a dark terminal/phone mockup in both modes
 - Animated hero, canvas telemetry backdrop, glass panels, spotlight cards, tilt interactions and scroll reveals that sharpen from blur
 - Live latest-release panel powered by the public GitHub API
-- Smart download matcher for modded HyperOS / AOSP and KowSU + SuSFS / clean KernelSU / No Root
+- Smart download matcher for modded HyperOS / OEM ColorOS ports / clean AOSP and KowSU + SuSFS / clean KernelSU / No Root
 - Live changelog from GitHub releases, with verified static fallback entries
-- Separate Telegram-style community at `community.html`: public General / Releases / Off-topic channels, server-validated message forwarding and a private Bug Hunting desk
+- Separate Telegram-style community at `community.html`: public General / Releases / Off-topic channels, pinned messages, replies, server-validated forwarding and a private Bug Hunting desk
 - Google/GitHub sign-in for reviews and channel chat, with private bug reports visible only to their author and staff
+- Photo, video and any-file chat attachments up to 2 MB, with inline previews, drag-and-drop and clipboard paste
+- Reply notifications with an in-app inbox, opt-in browser alerts and owner release broadcasts
 - Public community profiles, report buttons, posting-only bans, configurable slow mode and an aggregate community pulse
 - Compact floating liquid-glass dock with a spring lens indicator, scroll hide/reveal and an account-aware settings sheet
 - Liquid Glass 2.0: animated ambient mesh, SVG edge refraction, global `glass-surface` / `glass-header` / `glass-pill` tiers and a readability pass for the community
@@ -118,6 +120,9 @@ Create a free Supabase project, then open **SQL Editor** and run these files in 
 4. [`supabase/migrations/20261125_fix_admin_delete_audit.sql`](supabase/migrations/20261125_fix_admin_delete_audit.sql) — makes the admin-removal audit path DELETE-safe.
 5. [`supabase/migrations/20261125_community_channels_forwarding.sql`](supabase/migrations/20261125_community_channels_forwarding.sql) — adds `chat_messages.channel`, forwarding metadata, the forwarding RPC, channel totals and the public member directory.
 6. [`supabase/migrations/20261125_fix_fill_community_author_channels.sql`](supabase/migrations/20261125_fix_fill_community_author_channels.sql) — restores profile-backed author metadata while preserving channels and forwarding.
+7. [`supabase/migrations/20261126_community_replies_notifications.sql`](supabase/migrations/20261126_community_replies_notifications.sql) — pins, replies, the private notification inbox and the GitHub release watcher.
+8. [`supabase/migrations/20261126_community_attachments.sql`](supabase/migrations/20261126_community_attachments.sql) — 2 MB chat attachments, the public Storage bucket and attachment-safe triggers.
+9. [`supabase/migrations/20261126_community_profile_attachments.sql`](supabase/migrations/20261126_community_profile_attachments.sql) — includes attachment metadata in the public profile activity feed.
 
 The migrations create:
 
@@ -128,10 +133,13 @@ The migrations create:
 - `public.community_moderation_log` — append-only audit trail
 - `public.community_settings` — live rate limits and chat slow mode
 - `public.site_visits` and `public.community_login_events` — privacy-preserving aggregate analytics
-- `public.chat_messages` channel and forwarding columns — public channels are `general`, `releases` and `off-topic`; `bugs` is never a public chat channel
-- RPCs for profiles, roles, heartbeat, visits, reports, bans, forwarding, public channel totals, public members, public stats and owner stats
+- `public.chat_messages` channel, forwarding, reply, pin, release and attachment columns — public channels are `general`, `releases` and `off-topic`; `bugs` is never a public chat channel
+- `public.community_notifications` — private reply/release inbox exposed only through security-definer RPCs
+- `public.community_release_events` and `public.community_release_watch_state` — release announcement ledger and watcher state
+- `storage.buckets` / `storage.objects` policies for `community-attachments` — public read, authenticated owner-scoped uploads, staff deletes and a 2 MB limit
+- RPCs for profiles, roles, heartbeat, visits, reports, bans, forwarding, pins, notifications, release announcements, public channel totals, public members, public stats and owner stats
 
-Run the migration only once. It is written to be safe when applied to the base schema.
+Run each file once, in order. They are written to be safe when applied to the base schema.
 
 ### 2. Enable Google and GitHub
 
@@ -223,19 +231,29 @@ Only the owner can add/remove admins or change settings. The owner account canno
 | Bug hunting | Private desk; sign-in required | Only your own private reports, with a new-report form | Prefilled GitHub issue (public) |
 | Public channels | Read only; sign-in gate | General / Releases / Off-topic chat, 6.5-second polling | Telegram / Discussions cards |
 | Forwarding | — | Forward public messages between public channels | Not available |
+| Attachments | — | Photo, video or any file up to 2 MB; drag/drop and paste supported | Not available |
+| Pins / replies | Read pinned messages | Reply to messages; staff can pin one message per public channel | Not available |
+| Notifications | — | In-app reply inbox, opt-in browser alerts and release broadcasts | Not available |
 | Reports | Sign-in required | Private report, limited per day | Not available |
 | Account | Header sign-in button | Public profile, provider badge and sign-out | Hidden |
 | Moderation | — | Owner/admin console at `admin.html` | — |
 
 The Garage is a single mobile-first page with a desktop channel rail, mobile channel tabs and a members/rules drawer. `General`, `Releases` and `Off-topic` are public channels; `Bug Hunting` is a private, read-only support area that lists only the signed-in user's own reports and never accepts public messages. Staff read all private reports in `admin.html`.
 
-Forwarding is server-owned. `community_forward_message` verifies that the source and target are public chat channels, then writes the original author/channel attribution in the same transaction. Client inserts cannot forge `forwarded_from_*` metadata.
+Forwarding is server-owned. `community_forward_message` verifies that the source and target are public chat channels, then writes the original author/channel attribution in the same transaction. Client inserts cannot forge `forwarded_from_*` metadata. Attachments are forwarded by reference to the same Storage object.
+
+Replies store server-owned parent author and excerpt metadata. A database trigger creates a private notification for the parent author. Pins are staff-only and limited to one pinned message per public channel. Release announcements are written by the trusted watcher or a staff RPC, deduplicated by tag, and broadcast to registered profiles.
+
+Attachments use the public `community-attachments` bucket. One attachment is allowed per message. Signed-in users may upload only into their own folder, every file type is accepted, and both the bucket and a database check enforce the 2 MB limit. The database stores the Storage path, never a client-supplied URL, and derives the display kind (`image`, `video` or `file`) on the server. Staff can delete any attachment; authors can clean up their own. SVG and other non-previewable images are shown as download links rather than inline images.
+
+The release watcher uses `pg_cron` + `pg_net` to poll the public GitHub releases API every 10 minutes. A release ledger prevents duplicate announcements. Staff can also publish the latest stable release manually from the Releases channel; the announcement is pinned and broadcast to registered profiles. Browser alerts are opt-in and appear while the site is open or on the next visit — true closed-browser Web Push is not included.
 
 Auth uses Supabase’s OAuth redirect flow. The access token is refreshed in the browser and the session is stored in `localStorage` under `extreme_plus_auth_v1`. The site never sees a password. OAuth callbacks must match a short-lived local sign-in state, so unsolicited tokens in a URL are rejected before a session is stored.
 
 RLS rules:
 
 - Public channels and reviews are publicly readable; inserts require `auth.uid() = user_id`. Channel writes are limited to `general`, `releases` and `off-topic`.
+- Chat attachments are public-read objects in `community-attachments`. Uploads require an authenticated session and a path inside the caller's own UUID folder; deletes require the folder owner or community staff.
 - Bug reports are readable only by their author or community staff. The `Bug Hunting` UI filters to the signed-in user's reports; staff use the admin console.
 - Author names, usernames, avatars and providers come from `public.community_profiles`; timestamps, channels, bug status and forwarding attribution are set by triggers/RPCs, not trusted from the browser. New bug reports are forced to `open`.
 - Reports are readable by the reporter and admins. Bans and the audit log are admin-only.
@@ -252,6 +270,7 @@ RLS rules:
 - Public stats show aggregate members, online now, visits, sign-ins, reviews, per-channel chat/message totals and public member cards. Daily/weekly detail and top paths are owner-only.
 - The owner console is `noindex`; profile pages are `noindex` too because they contain user-generated content.
 - New accounts are not blocked and there is no CAPTCHA. Abuse control is OAuth, server-side rate limits, reporting, posting bans and audit history.
+- Chat attachments are public files attached to public channels. Do not upload private documents. The site never stores attachment data in `localStorage`; only the Storage object path is saved with the message.
 
 ### Change limits and slow mode
 
@@ -271,13 +290,16 @@ Limits are enforced by database triggers, so changing the front end cannot bypas
 
 The site requests the latest five releases, selects the newest non-draft, non-prerelease release, then matches attached `.zip` assets by filename:
 
-| Choice | Filename tokens |
-| --- | --- |
-| HyperOS | `hyperos` |
-| AOSP | `aosp` |
-| KowSU + SuSFS | `susfs`, but **not** `nosusfs` |
-| Clean KernelSU | `kow.su` / `kernelsu` / `ksu` / `resuki` without active SuSFS or `noroot` |
-| No Root | `noroot` / `no-root` |
+| Choice | Filename tokens | Package family |
+| --- | --- | --- |
+| Modded HyperOS | `hyperos` | HyperOS / OEM |
+| OEM / ColorOS | `hyperos` | HyperOS / OEM |
+| Clean AOSP | `aosp` | Clean AOSP |
+| KowSU + SuSFS | `susfs`, but **not** `nosusfs` | Any ROM family |
+| Clean KernelSU | `kow.su` / `kernelsu` / `ksu` / `resuki` without active SuSFS or `noroot` | Any ROM family |
+| No Root | `noroot` / `no-root` | Any ROM family |
+
+ColorOS ports and every OEM port ROM must use the HyperOS package; they do not work with the AOSP package. The matcher maps both **Modded HyperOS** and **OEM / ColorOS** to the `hyperos` asset and only **Clean AOSP** to `aosp`.
 
 The EKM APK is resolved from an `.apk` asset whose filename starts with `ekm` in the same release. If GitHub is unavailable or rate-limited, the panel links directly to the releases page.
 
@@ -353,7 +375,7 @@ Release notes support lightweight Markdown-style lines. The changelog renderer t
 
 `sw.js` pre-caches the shell, fonts, icons, CSS and JS, including the community, profile and admin pages. Navigations are network-first with a per-URL cache and an offline fallback; static assets are stale-while-revalidate.
 
-After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v5` → `v6`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v7`.
+After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v5` → `v6`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v8`.
 
 GitHub and Supabase API requests are cross-origin and intentionally never cached by the service worker. The app’s own GitHub `localStorage` cache is separate.
 
@@ -400,7 +422,10 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
 │       ├── 20261125_fix_track_visit_digest.sql
 │       ├── 20261125_fix_admin_delete_audit.sql
 │       ├── 20261125_community_channels_forwarding.sql
-│       └── 20261125_fix_fill_community_author_channels.sql
+│       ├── 20261125_fix_fill_community_author_channels.sql
+│       ├── 20261126_community_replies_notifications.sql
+│       ├── 20261126_community_attachments.sql
+│       └── 20261126_community_profile_attachments.sql
 └── assets
     ├── css
     │   ├── style.css

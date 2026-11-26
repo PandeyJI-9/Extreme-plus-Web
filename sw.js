@@ -4,7 +4,7 @@
    clients pick up the new CSS, JS and data files.
    ============================================================ */
 
-const SW_VERSION = "v7";
+const SW_VERSION = "v8";
 const CACHE_NAME = `extreme-plus-static-${SW_VERSION}`;
 const BASE_URL = new URL("./", self.location.href).href;
 const INDEX_URL = new URL("index.html", BASE_URL).href;
@@ -153,6 +153,41 @@ async function staleWhileRevalidate(event) {
     headers: { "Content-Type": "text/plain; charset=utf-8" }
   });
 }
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const raw = event.notification && event.notification.data && event.notification.data.url
+    ? String(event.notification.data.url)
+    : "./community.html";
+  let target;
+  try {
+    const parsed = new URL(raw, self.location.href);
+    target = parsed.origin === self.location.origin
+      ? parsed.href
+      : new URL("community.html", BASE_URL).href;
+  } catch (error) {
+    target = new URL("community.html", BASE_URL).href;
+  }
+
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+      for (const client of windows) {
+        try {
+          if (new URL(client.url).origin !== new URL(target).origin) continue;
+          await client.focus();
+          if (typeof client.navigate === "function" && client.url !== target) {
+            await client.navigate(target).catch(() => {});
+          }
+          return;
+        } catch (error) {
+          // Try the next window.
+        }
+      }
+      if (self.clients.openWindow) await self.clients.openWindow(target);
+    })()
+  );
+});
 
 self.addEventListener("fetch", (event) => {
   const request = event.request;

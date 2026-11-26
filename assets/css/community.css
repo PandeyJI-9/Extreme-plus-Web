@@ -2547,3 +2547,713 @@ body.community-page {
     scroll-behavior: auto;
   }
 }
+
+/* ---------- replies, pins, notifications and releases ---------- */
+
+.community-notify-btn {
+  position: relative;
+}
+
+.notify-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  place-items: center;
+  border: 2px solid var(--panel);
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff4d7d, #ff7a45);
+  box-shadow: 0 4px 12px rgba(255, 77, 125, 0.35);
+  color: #fff;
+  font-family: var(--font-mono);
+  font-size: 0.4rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.notify-badge[hidden] {
+  display: none;
+}
+
+.community-notify-btn.has-unread svg {
+  animation: notifyNudge 2.8s ease-in-out infinite;
+}
+
+@keyframes notifyNudge {
+  0%, 86%, 100% { transform: rotate(0); }
+  90% { transform: rotate(-8deg); }
+  94% { transform: rotate(7deg); }
+  98% { transform: rotate(-3deg); }
+}
+
+.release-announce-btn:not([hidden]) {
+  display: inline-flex;
+  border-color: rgba(60, 220, 255, 0.22);
+  background: rgba(60, 220, 255, 0.075);
+  color: var(--cyan);
+}
+
+.release-announce-btn:hover {
+  border-color: rgba(60, 220, 255, 0.36);
+  background: rgba(60, 220, 255, 0.12);
+  color: var(--text);
+}
+
+.garage-reply-quote {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 0.1rem;
+  margin: 0 0 0.38rem;
+  padding: 0.42rem 0.55rem;
+  border: 0;
+  border-left: 2px solid var(--cyan);
+  border-radius: 0 10px 10px 0;
+  background: rgba(60, 220, 255, 0.065);
+  color: var(--text-soft);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.garage-reply-quote:hover {
+  background: rgba(60, 220, 255, 0.11);
+}
+
+.garage-reply-quote small {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.42rem;
+  letter-spacing: 0.04em;
+}
+
+.garage-reply-quote span {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.56rem;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garage-pinned-tag,
+.garage-release-tag {
+  padding: 0.08rem 0.34rem;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 0.3rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.garage-pinned-tag {
+  background: rgba(60, 220, 255, 0.09);
+  color: var(--cyan);
+}
+
+.garage-release-tag {
+  background: rgba(176, 108, 255, 0.11);
+  color: var(--violet);
+}
+
+.garage-message.is-highlighted .garage-bubble {
+  animation: messageHighlight 1.9s ease both;
+}
+
+@keyframes messageHighlight {
+  0%, 100% {
+    border-color: var(--line);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.055),
+      0 6px 18px rgba(var(--shadow-rgb), 0.12);
+  }
+  12%, 68% {
+    border-color: rgba(60, 220, 255, 0.48);
+    box-shadow:
+      0 0 0 3px rgba(60, 220, 255, 0.12),
+      0 8px 24px rgba(60, 220, 255, 0.16);
+  }
+}
+
+.composer-reply {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.45rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid rgba(60, 220, 255, 0.2);
+  border-radius: 12px;
+  background: rgba(60, 220, 255, 0.06);
+}
+
+.composer-reply[hidden] {
+  display: none;
+}
+
+.composer-reply-mark {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  place-items: center;
+  border-radius: 8px;
+  background: rgba(60, 220, 255, 0.1);
+  color: var(--cyan);
+  font-size: 0.8rem;
+}
+
+.composer-reply-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.composer-reply-copy small {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.composer-reply-copy small strong {
+  color: var(--text);
+}
+
+.composer-reply-copy > span {
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 0.58rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-reply-cancel {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(var(--ink-rgb), 0.03);
+  color: var(--faint);
+  font-size: 1rem;
+  line-height: 1;
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.composer-reply-cancel:hover {
+  border-color: var(--line-strong);
+  background: rgba(var(--ink-rgb), 0.07);
+  color: var(--text);
+}
+
+.notification-dialog {
+  --dialog-width: min(620px, calc(100vw - 1.4rem));
+}
+
+.notification-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  margin-top: 1rem;
+}
+
+.notification-unread {
+  color: var(--text-soft);
+  font-family: var(--font-mono);
+  font-size: 0.52rem;
+  letter-spacing: 0.04em;
+}
+
+.notification-permission {
+  margin: 0.35rem 0 0.8rem;
+  color: var(--faint);
+  font-size: 0.56rem;
+  line-height: 1.5;
+}
+
+.notification-list {
+  display: grid;
+  gap: 0.45rem;
+  max-height: min(42dvh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 0.15rem;
+}
+
+.notification-empty {
+  margin: 0;
+  padding: 1.1rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: 14px;
+  color: var(--faint);
+  font-size: 0.62rem;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.notification-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.62rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(var(--ink-rgb), 0.025);
+  color: var(--text-soft);
+  text-align: left;
+  transition: border-color 0.2s ease, background-color 0.2s ease, transform 0.2s var(--ease-out);
+}
+
+.notification-item:hover {
+  border-color: var(--line-strong);
+  background: rgba(var(--ink-rgb), 0.055);
+  transform: translateY(-1px);
+}
+
+.notification-item.is-unread {
+  border-color: rgba(60, 220, 255, 0.2);
+  background:
+    linear-gradient(135deg, rgba(60, 220, 255, 0.075), rgba(70, 120, 255, 0.035)),
+    rgba(var(--ink-rgb), 0.025);
+}
+
+.notification-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(var(--ink-rgb), 0.05);
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.notification-icon--reply {
+  background: rgba(60, 220, 255, 0.1);
+  color: var(--cyan);
+}
+
+.notification-icon--release {
+  background: rgba(176, 108, 255, 0.12);
+  color: var(--violet);
+}
+
+.notification-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.notification-copy strong {
+  color: var(--text);
+  font-size: 0.66rem;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.notification-copy span {
+  overflow-wrap: anywhere;
+  color: var(--text-soft);
+  font-size: 0.58rem;
+  line-height: 1.45;
+}
+
+.notification-copy small {
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.4rem;
+  letter-spacing: 0.03em;
+}
+
+.notification-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
+.notification-toolbar .button,
+.notification-actions .button {
+  min-height: 38px;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.58rem;
+}
+
+.release-dialog {
+  --dialog-width: min(680px, calc(100vw - 1.4rem));
+}
+
+.release-dialog .review-form {
+  margin-top: 0.9rem;
+}
+
+.release-dialog textarea {
+  min-height: 100px;
+}
+
+.label-optional {
+  color: var(--faint);
+  font-weight: 400;
+}
+
+@media (max-width: 700px) {
+  .notification-list {
+    max-height: min(38dvh, 340px);
+  }
+
+  .notification-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .notification-toolbar .button {
+    width: 100%;
+  }
+
+  .garage-reply-quote span {
+    max-width: min(52vw, 300px);
+  }
+}
+
+/* ------------------------------------------------------------
+   Chat attachments — photos, video and any file up to 2 MB
+   ------------------------------------------------------------ */
+.chat-composer.is-dragover .composer-shell {
+  border-color: rgba(60, 220, 255, 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 3px rgba(60, 220, 255, 0.1),
+    0 10px 28px rgba(var(--shadow-rgb), 0.2);
+}
+
+.composer-attachment {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin: 0 0 0.45rem;
+  padding: 0.45rem 0.55rem;
+  border: 1px solid rgba(60, 220, 255, 0.22);
+  border-radius: 12px;
+  background: rgba(60, 220, 255, 0.055);
+}
+
+.composer-attachment[hidden] {
+  display: none;
+}
+
+.composer-attachment-thumb {
+  display: grid;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(var(--ink-rgb), 0.05);
+  color: var(--cyan);
+}
+
+.composer-attachment-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.composer-attachment-badge {
+  font-family: var(--font-mono);
+  font-size: 0.4rem;
+  letter-spacing: 0.04em;
+}
+
+.composer-attachment-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.composer-attachment-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.62rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-attachment-copy small {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.38rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-tools {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.composer-attach {
+  display: grid;
+  width: 31px;
+  height: 31px;
+  flex: none;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: rgba(var(--ink-rgb), 0.035);
+  color: var(--faint);
+  transition: color 0.2s ease, border-color 0.2s ease, background-color 0.2s ease, transform 0.2s var(--ease-out);
+}
+
+.composer-attach:hover,
+.composer-attach:focus-visible {
+  border-color: rgba(60, 220, 255, 0.32);
+  background: rgba(60, 220, 255, 0.08);
+  color: var(--cyan);
+  transform: translateY(-1px);
+}
+
+.composer-attach:active {
+  transform: scale(0.94);
+}
+
+.composer-attach svg {
+  width: 15px;
+  height: 15px;
+}
+
+.garage-attachment {
+  margin-top: 0.45rem;
+}
+
+.garage-bubble > .garage-attachment:first-child {
+  margin-top: 0;
+}
+
+.garage-attachment--image {
+  max-width: min(100%, 340px);
+  margin-right: 0;
+  margin-bottom: 0;
+  margin-left: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.04);
+}
+
+.garage-attachment-media {
+  display: block;
+  overflow: hidden;
+  background: #05080c;
+}
+
+.garage-attachment-media img {
+  display: block;
+  width: 100%;
+  max-height: 300px;
+  background: #05080c;
+  object-fit: contain;
+}
+
+.garage-attachment-caption {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.12rem;
+  padding: 0.45rem 0.55rem;
+}
+
+.garage-attachment-caption strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garage-attachment-caption small {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.36rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garage-attachment--video {
+  max-width: min(100%, 420px);
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.04);
+}
+
+.garage-attachment--video video {
+  display: block;
+  width: 100%;
+  max-height: 320px;
+  background: #000;
+}
+
+.garage-attachment--video .garage-attachment-caption {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+}
+
+.garage-attachment--video .garage-file-copy {
+  min-width: 0;
+}
+
+.garage-attachment-open {
+  flex: none;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.36rem;
+  letter-spacing: 0.03em;
+  text-decoration: none;
+}
+
+.garage-attachment-open:hover {
+  text-decoration: underline;
+}
+
+.garage-attachment--file {
+  display: flex;
+  max-width: min(100%, 390px);
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(var(--ink-rgb), 0.035);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.garage-attachment--file:hover {
+  border-color: rgba(60, 220, 255, 0.28);
+  background: rgba(60, 220, 255, 0.06);
+}
+
+.garage-file-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  flex: none;
+  place-items: center;
+  border-radius: 10px;
+  background: rgba(60, 220, 255, 0.1);
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.38rem;
+  letter-spacing: 0.03em;
+}
+
+.garage-file-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.garage-file-copy strong {
+  overflow: hidden;
+  color: var(--text);
+  font-size: 0.58rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garage-file-copy small {
+  overflow: hidden;
+  color: var(--faint);
+  font-family: var(--font-mono);
+  font-size: 0.36rem;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.garage-file-open {
+  flex: none;
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.36rem;
+  letter-spacing: 0.03em;
+}
+
+.garage-message.is-own .garage-attachment--file,
+.garage-message.is-own .garage-attachment--image,
+.garage-message.is-own .garage-attachment--video {
+  border-color: rgba(60, 220, 255, 0.18);
+}
+
+@media (max-width: 700px) {
+  .composer-hint-extra {
+    display: none;
+  }
+
+  .composer-tools {
+    gap: 0.3rem;
+  }
+
+  .composer-attach {
+    width: 29px;
+    height: 29px;
+  }
+
+  .garage-attachment--image,
+  .garage-attachment--video {
+    max-width: min(100%, 280px);
+  }
+
+  .garage-attachment-media img,
+  .garage-attachment--video video {
+    max-height: 240px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .community-notify-btn.has-unread svg,
+  .garage-message.is-highlighted .garage-bubble {
+    animation: none !important;
+  }
+
+  .composer-attach,
+  .garage-attachment--file {
+    transition: none !important;
+  }
+}

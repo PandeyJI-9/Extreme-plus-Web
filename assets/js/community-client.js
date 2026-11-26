@@ -251,6 +251,91 @@
     });
   }
 
+  function encodeStoragePath(path) {
+    return String(path || "")
+      .split("/")
+      .filter(Boolean)
+      .map((part) => encodeURIComponent(part))
+      .join("/");
+  }
+
+  function storagePublicUrl(bucket, path) {
+    if (!ready || !bucket || !path) return "";
+    return `${base}/storage/v1/object/public/${encodeURIComponent(bucket)}/${encodeStoragePath(path)}`;
+  }
+
+  async function storageUpload(bucket, path, file, session, contentType = "") {
+    if (!ready) {
+      const error = new Error("Storage is not configured.");
+      error.status = 503;
+      throw error;
+    }
+    if (!session || !session.access_token) {
+      const error = new Error("Sign in required.");
+      error.status = 401;
+      throw error;
+    }
+    if (!file) {
+      const error = new Error("Choose a file first.");
+      error.status = 400;
+      throw error;
+    }
+
+    const response = await fetch(
+      `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStoragePath(path)}`,
+      {
+        method: "POST",
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${session.access_token}`,
+          "Content-Type": contentType || file.type || "application/octet-stream",
+          "cache-control": "max-age=3600",
+          "x-upsert": "false"
+        },
+        body: file
+      }
+    );
+
+    if (!response.ok) {
+      let message = "The file could not be uploaded.";
+      try {
+        const payload = await response.json();
+        message = payload && (payload.message || payload.error) ? String(payload.message || payload.error) : message;
+      } catch (error) {
+        // Keep the friendly fallback.
+      }
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
+    }
+
+    try {
+      return await response.json();
+    } catch (error) {
+      return {};
+    }
+  }
+
+  async function storageDelete(bucket, path, session) {
+    if (!ready || !bucket || !path) return false;
+    if (!session || !session.access_token) return false;
+    try {
+      const response = await fetch(
+        `${base}/storage/v1/object/${encodeURIComponent(bucket)}/${encodeStoragePath(path)}`,
+        {
+          method: "DELETE",
+          headers: {
+            apikey: anonKey,
+            Authorization: `Bearer ${session.access_token}`
+          }
+        }
+      );
+      return response.ok;
+    } catch (error) {
+      return false;
+    }
+  }
+
   function normaliseAvatarUrl(value, size = 64) {
     if (!value) return "";
     let url;
@@ -447,6 +532,9 @@
     signOut,
     getVisitorId,
     trackVisit,
+    storagePublicUrl,
+    storageUpload,
+    storageDelete,
     normaliseAvatarUrl,
     smallAvatar: normaliseAvatarUrl,
     initials,
