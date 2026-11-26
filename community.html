@@ -45,9 +45,17 @@
   <link rel="stylesheet" href="./assets/css/style.css">
   <link rel="stylesheet" href="./assets/css/liquid-glass.css">
   <link rel="stylesheet" href="./assets/css/community.css">
+  <link rel="stylesheet" href="./assets/css/glass-v2.css">
 </head>
 <body class="community-page">
   <a class="skip-link" href="#main">Skip to content</a>
+  <svg class="liquid-svg-defs" aria-hidden="true" focusable="false">
+    <filter id="liquid-refraction" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006 0.012" numOctaves="2" seed="9" result="noise"></feTurbulence>
+      <feGaussianBlur in="noise" stdDeviation="1.4" result="softNoise"></feGaussianBlur>
+      <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="6" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+    </filter>
+  </svg>
   <div class="page-grain" aria-hidden="true"></div>
 
   <div class="community-ambient" aria-hidden="true">
@@ -57,7 +65,7 @@
     <span class="community-grid"></span>
   </div>
 
-  <header class="community-header">
+  <header class="community-header glass-header">
     <div class="community-header-inner">
       <a class="community-brand" href="./" aria-label="PROJECT EXTREME++ home">
         <span class="community-brand-mark" aria-hidden="true">EX<span>++</span></span>
@@ -76,15 +84,15 @@
       </div>
 
       <div class="community-header-actions">
-        <a class="community-kernel-link" href="./">
+        <a class="community-kernel-link glass-pill" href="./">
           <span>Kernel</span>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </a>
-        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false" title="Switch to light mode">
+        <button class="theme-toggle glass-pill" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false" title="Switch to light mode">
           <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4" stroke="currentColor" stroke-width="1.7"/><path d="M12 2v2.2M12 19.8V22M2 12h2.2M19.8 12H22M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M19.1 4.9l-1.6 1.6M6.5 17.5l-1.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.2 15.1A8.3 8.3 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
         </button>
-        <button class="community-account" id="communityAccount" type="button" data-community-auth>
+        <button class="community-account glass-pill" id="communityAccount" type="button" data-community-auth>
           <span class="community-account-avatar" data-community-avatar aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8.2" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           </span>
@@ -93,10 +101,10 @@
             <strong data-community-account-label>Sign in</strong>
           </span>
         </button>
-        <button class="community-icon-btn" id="communitySettingsBtn" type="button" data-open-settings aria-label="Open settings" title="Settings">
+        <button class="community-icon-btn glass-pill" id="communitySettingsBtn" type="button" data-open-settings aria-label="Open settings" title="Settings">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="15" cy="7" r="2.2" stroke="currentColor" stroke-width="1.7"/><circle cx="9" cy="17" r="2.2" stroke="currentColor" stroke-width="1.7"/></svg>
         </button>
-        <button class="community-icon-btn community-members-toggle" id="communityMembersToggle" type="button" aria-label="Open members and rules" aria-expanded="false" aria-controls="membersPanel">
+        <button class="community-icon-btn community-members-toggle glass-pill" id="communityMembersToggle" type="button" aria-label="Open members and rules" aria-expanded="false" aria-controls="membersPanel">
           <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="9" cy="8" r="3.2" stroke="currentColor" stroke-width="1.7"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 5.5a3.2 3.2 0 0 1 0 6.2M17 14.5a5.5 5.5 0 0 1 3.5 4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
         </button>
       </div>
@@ -104,14 +112,14 @@
   </header>
 
   <div class="community-mobile-tabs" role="tablist" aria-label="Community channels">
-    <button class="community-mobile-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="communityStage" data-channel-link="general"><span aria-hidden="true">#</span> General</button>
-    <button class="community-mobile-tab" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="releases"><span aria-hidden="true">#</span> Releases</button>
-    <button class="community-mobile-tab community-mobile-tab--private" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="bugs"><span aria-hidden="true">▣</span> Bug hunting</button>
-    <button class="community-mobile-tab" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="off-topic"><span aria-hidden="true">#</span> Off-topic</button>
+    <button class="community-mobile-tab glass-pill is-active" type="button" role="tab" aria-selected="true" aria-controls="communityStage" data-channel-link="general"><span aria-hidden="true">#</span> General</button>
+    <button class="community-mobile-tab glass-pill" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="releases"><span aria-hidden="true">#</span> Releases</button>
+    <button class="community-mobile-tab glass-pill community-mobile-tab--private" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="bugs"><span aria-hidden="true">▣</span> Bug hunting</button>
+    <button class="community-mobile-tab glass-pill" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="off-topic"><span aria-hidden="true">#</span> Off-topic</button>
   </div>
 
   <main class="community-shell" id="main" tabindex="-1">
-    <aside class="community-rail liquid-glass" aria-label="Community channels">
+    <aside class="community-rail liquid-glass glass-surface" aria-label="Community channels">
       <div class="rail-server">
         <span class="rail-server-icon" aria-hidden="true">EX<span>++</span></span>
         <span class="rail-server-copy">
@@ -164,7 +172,7 @@
     </aside>
 
     <section class="community-stage" id="communityStage" role="tabpanel" aria-labelledby="channelTitle" tabindex="-1">
-      <section class="community-chat-panel liquid-glass" id="chatPanel" aria-label="Channel chat">
+      <section class="community-chat-panel liquid-glass glass-surface" id="chatPanel" aria-label="Channel chat">
         <header class="channel-header">
           <div class="channel-header-main">
             <span class="channel-hash" id="channelHash" aria-hidden="true">#</span>
@@ -236,7 +244,7 @@
       </section>
 
       <section class="bug-desk" id="bugDesk" aria-label="Private bug desk" hidden>
-        <header class="bug-desk-hero liquid-glass">
+        <header class="bug-desk-hero liquid-glass glass-surface">
           <span class="bug-desk-lock" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="3" stroke="currentColor" stroke-width="1.7"/><path d="M8 10V8a4 4 0 0 1 8 0v2M12 14v2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           </span>
@@ -248,7 +256,7 @@
           <button class="button button--primary" type="button" data-open-bug>Submit private report <span class="button-arrow" aria-hidden="true">→</span></button>
         </header>
 
-        <div class="bug-desk-gate liquid-glass" id="bugDeskGate" hidden>
+        <div class="bug-desk-gate liquid-glass glass-surface" id="bugDeskGate" hidden>
           <div>
             <strong>Sign in to open your private bug desk.</strong>
             <p>Reports include ROM, build, root flavor and logs. Nobody else in the community can read them.</p>
@@ -264,7 +272,7 @@
       </section>
     </section>
 
-    <aside class="community-members liquid-glass" id="membersPanel" aria-label="Members and house rules">
+    <aside class="community-members liquid-glass glass-surface" id="membersPanel" aria-label="Members and house rules">
       <div class="members-head">
         <div>
           <span class="section-kicker">In the garage</span>
@@ -301,7 +309,7 @@
   <div class="members-scrim" id="membersScrim" hidden></div>
 
   <dialog class="review-dialog community-dialog" id="communityAuthDialog" aria-labelledby="communityAuthTitle">
-    <div class="review-dialog-shell">
+    <div class="review-dialog-shell glass-surface">
       <button class="dialog-close" id="communityAuthClose" type="button" aria-label="Close sign-in dialog">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
@@ -346,7 +354,7 @@
   </dialog>
 
   <dialog class="review-dialog bug-dialog community-dialog" id="bugDialog" aria-labelledby="bugDialogTitle">
-    <div class="review-dialog-shell">
+    <div class="review-dialog-shell glass-surface">
       <button class="dialog-close" id="bugDialogClose" type="button" aria-label="Close bug report form">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
@@ -421,7 +429,7 @@
   </dialog>
 
   <dialog class="review-dialog community-dialog" id="forwardDialog" aria-labelledby="forwardDialogTitle">
-    <div class="review-dialog-shell">
+    <div class="review-dialog-shell glass-surface">
       <button class="dialog-close" id="forwardDialogClose" type="button" aria-label="Close forward dialog">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
@@ -438,7 +446,7 @@
   </dialog>
 
   <dialog class="review-dialog report-dialog community-dialog" id="reportDialog" aria-labelledby="reportDialogTitle">
-    <div class="review-dialog-shell">
+    <div class="review-dialog-shell glass-surface">
       <button class="dialog-close" id="reportDialogClose" type="button" aria-label="Close report form">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>
@@ -462,7 +470,7 @@
   </dialog>
 
   <dialog class="settings-dialog" id="settingsDialog" aria-labelledby="settingsTitle">
-    <div class="settings-shell liquid-glass">
+    <div class="settings-shell liquid-glass glass-surface">
       <button class="dialog-close" id="settingsClose" type="button" aria-label="Close settings">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
       </button>

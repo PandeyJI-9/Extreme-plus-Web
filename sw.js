@@ -4,7 +4,7 @@
    clients pick up the new CSS, JS and data files.
    ============================================================ */
 
-const SW_VERSION = "v6";
+const SW_VERSION = "v7";
 const CACHE_NAME = `extreme-plus-static-${SW_VERSION}`;
 const BASE_URL = new URL("./", self.location.href).href;
 const INDEX_URL = new URL("index.html", BASE_URL).href;
@@ -18,6 +18,7 @@ const CORE_ASSETS = [
   "assets/css/style.css",
   "assets/css/community.css",
   "assets/css/liquid-glass.css",
+  "assets/css/glass-v2.css",
   "assets/css/profile.css",
   "assets/css/admin.css",
   "assets/js/config.js",

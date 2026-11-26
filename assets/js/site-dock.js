@@ -142,6 +142,81 @@
     });
   }
 
+  function initDockLens() {
+    const dock = $(".liquid-dock");
+    const inner = dock ? $(".liquid-dock-inner", dock) : null;
+    if (!dock || !inner) return;
+
+    let lens = $(".dock-lens", inner);
+    if (!lens) {
+      lens = document.createElement("span");
+      lens.className = "dock-lens";
+      lens.setAttribute("aria-hidden", "true");
+      inner.prepend(lens);
+    }
+
+    const update = () => {
+      const active = $(".dock-item.is-active", inner);
+      if (!active) {
+        dock.classList.remove("has-lens");
+        return;
+      }
+      const innerRect = inner.getBoundingClientRect();
+      const itemRect = active.getBoundingClientRect();
+      inner.style.setProperty("--dock-lens-x", `${Math.max(0, itemRect.left - innerRect.left)}px`);
+      inner.style.setProperty("--dock-lens-w", `${Math.max(1, itemRect.width)}px`);
+      dock.classList.add("has-lens");
+    };
+
+    const schedule = () => {
+      window.requestAnimationFrame(update);
+    };
+
+    schedule();
+    window.addEventListener("resize", schedule, { passive: true });
+    window.addEventListener("orientationchange", schedule, { passive: true });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(schedule).catch(() => {});
+    }
+    if (typeof ResizeObserver === "function") {
+      new ResizeObserver(schedule).observe(inner);
+    }
+    if (typeof MutationObserver === "function") {
+      const observer = new MutationObserver(schedule);
+      $$("[data-dock]", dock).forEach((item) => {
+        observer.observe(item, { attributes: true, attributeFilter: ["class"] });
+      });
+    }
+  }
+
+  function initDockScroll() {
+    const dock = $(".liquid-dock");
+    if (!dock) return;
+
+    let lastY = Math.max(0, window.scrollY || 0);
+    let frame = 0;
+
+    const update = () => {
+      frame = 0;
+      const y = Math.max(0, window.scrollY || 0);
+      const delta = y - lastY;
+      if (Math.abs(delta) < 6) return;
+      const hide = delta > 0 && y > 140 && !document.body.classList.contains("dialog-open");
+      dock.classList.toggle("is-hidden", hide);
+      lastY = y;
+    };
+
+    window.addEventListener("scroll", () => {
+      if (!frame) frame = window.requestAnimationFrame(update);
+    }, { passive: true });
+
+    dock.addEventListener("focusin", () => dock.classList.remove("is-hidden"));
+    window.addEventListener("pageshow", () => {
+      dock.classList.remove("is-hidden");
+      lastY = Math.max(0, window.scrollY || 0);
+    });
+  }
+
   function initDockGlow() {
     const dock = $(".liquid-dock");
     if (!dock || !window.matchMedia("(pointer: fine)").matches) return;
@@ -206,6 +281,8 @@
 
   function init() {
     initDockActive();
+    initDockLens();
+    initDockScroll();
     initDockGlow();
     initSettings();
     syncDialogState();

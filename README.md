@@ -14,7 +14,8 @@ Pure HTML, CSS and vanilla JavaScript. No framework, no bundler and no npm build
 - Separate Telegram-style community at `community.html`: public General / Releases / Off-topic channels, server-validated message forwarding and a private Bug Hunting desk
 - Google/GitHub sign-in for reviews and channel chat, with private bug reports visible only to their author and staff
 - Public community profiles, report buttons, posting-only bans, configurable slow mode and an aggregate community pulse
-- Floating liquid-glass bottom dock for the kernel site and community, plus an account-aware settings sheet
+- Compact floating liquid-glass dock with a spring lens indicator, scroll hide/reveal and an account-aware settings sheet
+- Liquid Glass 2.0: animated ambient mesh, SVG edge refraction, global `glass-surface` / `glass-header` / `glass-pill` tiers and a readability pass for the community
 - Noindex owner/admin console at `admin.html` for reports, content removal, bans, private bug reports, staff management, settings and the moderation audit log
 - Privacy-first analytics: anonymous visitor IDs, daily server-side hashes and aggregate counts only — no IP addresses, emails or third-party trackers
 - Graceful GitHub fallback: reviews and bug reports become prefilled issues, and chat points to Telegram / Discussions. GitHub has a prefilled-issue URL limit, so an unusually long bug report opens a shortened issue and copies the complete report to the clipboard for pasting
@@ -352,7 +353,7 @@ Release notes support lightweight Markdown-style lines. The changelog renderer t
 
 `sw.js` pre-caches the shell, fonts, icons, CSS and JS, including the community, profile and admin pages. Navigations are network-first with a per-URL cache and an offline fallback; static assets are stale-while-revalidate.
 
-After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v5` → `v6`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v6`.
+After deploying changes, **bump `SW_VERSION` in `sw.js`** (for example `v5` → `v6`). That changes the service worker file, triggers an update, and replaces the old cache on the next visit. Without a bump, returning visitors may keep using the old cached CSS/JS until the browser revalidates. The current release uses `v7`.
 
 GitHub and Supabase API requests are cross-origin and intentionally never cached by the service worker. The app’s own GitHub `localStorage` cache is separate.
 
@@ -405,6 +406,7 @@ All main tokens live at the top of `assets/css/style.css` under `:root` and `htm
     │   ├── style.css
     │   ├── community.css
     │   ├── liquid-glass.css
+    │   ├── glass-v2.css
     │   ├── profile.css
     │   └── admin.css
     ├── data/reviews.js

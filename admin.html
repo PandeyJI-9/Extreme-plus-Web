@@ -31,12 +31,20 @@
   </script>
   <link rel="stylesheet" href="./assets/css/style.css">
   <link rel="stylesheet" href="./assets/css/admin.css">
+  <link rel="stylesheet" href="./assets/css/glass-v2.css">
 </head>
 <body class="admin-page">
   <a class="skip-link" href="#main">Skip to content</a>
+  <svg class="liquid-svg-defs" aria-hidden="true" focusable="false">
+    <filter id="liquid-refraction" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feTurbulence type="fractalNoise" baseFrequency="0.006 0.012" numOctaves="2" seed="9" result="noise"></feTurbulence>
+      <feGaussianBlur in="noise" stdDeviation="1.4" result="softNoise"></feGaussianBlur>
+      <feDisplacementMap in="SourceGraphic" in2="softNoise" scale="6" xChannelSelector="R" yChannelSelector="G"></feDisplacementMap>
+    </filter>
+  </svg>
   <div class="page-grain" aria-hidden="true"></div>
 
-  <header class="admin-header">
+  <header class="admin-header glass-header">
     <div class="container admin-header-inner">
       <a class="admin-brand" href="./" aria-label="PROJECT EXTREME++ home">
         <span class="admin-brand-mark" aria-hidden="true">EX++</span>
@@ -45,7 +53,7 @@
       <div class="admin-header-actions">
         <span class="admin-role" id="adminRole" hidden>member</span>
         <span class="admin-user" id="adminUser">Checking access…</span>
-        <button class="theme-toggle" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false">
+        <button class="theme-toggle glass-pill" id="themeToggle" type="button" aria-label="Switch to light mode" aria-pressed="false">
           <svg class="theme-toggle-icon theme-toggle-icon--sun" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="4.1" stroke="currentColor" stroke-width="1.7"/><path d="M12 2.8v2.1M12 19.1v2.1M2.8 12h2.1M19.1 12h2.1M5.5 5.5 7 7M17 17l1.5 1.5M18.5 5.5 17 7M7 17l-1.5 1.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
           <svg class="theme-toggle-icon theme-toggle-icon--moon" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M20.2 15.1A8.3 8.3 0 0 1 8.9 3.8 8.5 8.5 0 1 0 20.2 15.1Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>
         </button>
@@ -71,7 +79,7 @@
     </div>
 
     <div class="admin-app" id="adminApp" hidden>
-      <section class="admin-hero reveal" aria-labelledby="adminTitle">
+      <section class="admin-hero reveal glass-surface" aria-labelledby="adminTitle">
         <div>
           <span class="section-kicker">Owner / admin surface</span>
           <h1 id="adminTitle">Command <span class="text-gradient">deck.</span></h1>
@@ -84,15 +92,15 @@
       </section>
 
       <section class="admin-stat-grid" aria-label="Community overview">
-        <article class="admin-stat"><span data-admin-stat="open_reports">—</span><small>Open reports</small></article>
-        <article class="admin-stat"><span data-admin-stat="active_bans">—</span><small>Active bans</small></article>
-        <article class="admin-stat"><span data-admin-stat="open_bugs">—</span><small>Open bugs</small></article>
-        <article class="admin-stat"><span data-admin-stat="members">—</span><small>Members</small></article>
-        <article class="admin-stat"><span data-admin-stat="online">—</span><small>Online now</small></article>
-        <article class="admin-stat"><span data-admin-stat="visits">—</span><small>Visits</small></article>
-        <article class="admin-stat"><span data-admin-stat="logins">—</span><small>Sign-ins</small></article>
-        <article class="admin-stat"><span data-admin-stat="reviews">—</span><small>Reviews</small></article>
-        <article class="admin-stat"><span data-admin-stat="chat">—</span><small>Chat messages</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="open_reports">—</span><small>Open reports</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="active_bans">—</span><small>Active bans</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="open_bugs">—</span><small>Open bugs</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="members">—</span><small>Members</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="online">—</span><small>Online now</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="visits">—</span><small>Visits</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="logins">—</span><small>Sign-ins</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="reviews">—</span><small>Reviews</small></article>
+        <article class="admin-stat glass-surface"><span data-admin-stat="chat">—</span><small>Chat messages</small></article>
       </section>
 
       <div class="admin-tabs" role="tablist" aria-label="Moderation sections">
@@ -112,7 +120,7 @@
           <button class="button button--ghost" id="refreshOverview" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
         </div>
         <div class="admin-overview-grid">
-          <article class="admin-card">
+          <article class="admin-card glass-surface">
             <h3>Moderation queue</h3>
             <div class="admin-mini-grid">
               <div><span data-admin-stat="open_reports">—</span><small>Open reports</small></div>
@@ -121,7 +129,7 @@
             </div>
             <p class="admin-muted">Posting-only bans keep accounts signed in and able to read. Expired bans stop blocking automatically.</p>
           </article>
-          <article class="admin-card">
+          <article class="admin-card glass-surface">
             <h3>Public totals</h3>
             <div class="admin-mini-grid">
               <div><span data-admin-stat="members">—</span><small>Members</small></div>
@@ -151,20 +159,20 @@
             <span><i style="background: #ffaa66"></i> Chat</span>
           </div>
           <div class="admin-overview-grid admin-overview-grid--three">
-            <article class="admin-card">
+            <article class="admin-card glass-surface">
               <h3>Providers</h3>
               <div class="admin-list" id="providerList"></div>
             </article>
-            <article class="admin-card">
+            <article class="admin-card glass-surface">
               <h3>Top paths</h3>
               <div class="admin-list" id="topPaths"></div>
             </article>
-            <article class="admin-card">
+            <article class="admin-card glass-surface">
               <h3>Newest members</h3>
               <div class="admin-list" id="recentMembers"></div>
             </article>
           </div>
-          <div class="admin-card">
+          <div class="admin-card glass-surface">
             <h3>Moderation summary</h3>
             <div class="admin-mini-grid" id="ownerModeration"></div>
           </div>
@@ -185,11 +193,11 @@
           <button class="button button--ghost" data-admin-refresh="content" type="button">Refresh <span class="button-arrow" aria-hidden="true">↻</span></button>
         </div>
         <div class="admin-overview-grid">
-          <article class="admin-card">
+          <article class="admin-card glass-surface">
             <h3>Latest reviews</h3>
             <div class="admin-list" id="contentReviews"></div>
           </article>
-          <article class="admin-card">
+          <article class="admin-card glass-surface">
             <h3>Latest chat messages</h3>
             <div class="admin-list" id="contentChat"></div>
           </article>
