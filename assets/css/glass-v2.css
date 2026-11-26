@@ -157,9 +157,7 @@ html[data-theme="light"] body::after {
   .companion-card,
   .terminal-card,
   .profile-hero,
-  .profile-stats,
   .profile-panel,
-  .admin-hero,
   .admin-card,
   .admin-stat,
   .admin-panel,
@@ -173,6 +171,11 @@ html[data-theme="light"] body::after {
 ) {
   backdrop-filter: blur(18px) saturate(165%);
   -webkit-backdrop-filter: blur(18px) saturate(165%);
+}
+
+.profile-stats > div {
+  backdrop-filter: blur(16px) saturate(165%);
+  -webkit-backdrop-filter: blur(16px) saturate(165%);
 }
 
 :is(.button, .auth-chip, .composer-send, .channel-members-btn, .members-close, .dialog-close) {
