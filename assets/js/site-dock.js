@@ -68,8 +68,12 @@
   }
 
   function syncThemeLabel() {
+    const classic = document.body.classList.contains("community-page");
     $$(THEME_LABEL).forEach((node) => {
-      node.textContent = currentTheme() === "light" ? "Light glass" : "Dark glass";
+      const light = currentTheme() === "light";
+      node.textContent = classic
+        ? (light ? "Paper" : "Ink")
+        : (light ? "Light glass" : "Dark glass");
     });
   }
 
@@ -88,7 +92,15 @@
         // Ignore disabled storage.
       }
       const meta = $("#themeColorMeta");
-      if (meta) meta.setAttribute("content", next === "light" ? "#f3f5fa" : "#06070b");
+      const classic = document.body.classList.contains("community-page");
+      if (meta) {
+        meta.setAttribute(
+          "content",
+          next === "light"
+            ? (classic ? "#f2eee4" : "#f3f5fa")
+            : (classic ? "#070706" : "#06070b")
+        );
+      }
     }
     syncThemeLabel();
   }

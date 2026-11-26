@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="color-scheme" content="dark light">
-  <meta name="theme-color" content="#06070b" id="themeColorMeta">
+  <meta name="theme-color" content="#070706" id="themeColorMeta">
   <title>The Garage — EXTREME++ Community</title>
   <meta name="description" content="The official EXTREME++ garage. Public chat for builds, releases and off-topic talk, plus a private bug desk visible only to you and the maintainer.">
   <meta name="robots" content="index, follow">
@@ -39,13 +39,14 @@
       root.setAttribute("data-theme", theme);
       root.style.colorScheme = theme;
       var meta = document.getElementById("themeColorMeta");
-      if (meta) meta.setAttribute("content", theme === "light" ? "#f3f5fa" : "#06070b");
+      if (meta) meta.setAttribute("content", theme === "light" ? "#f2eee4" : "#070706");
     })();
   </script>
   <link rel="stylesheet" href="./assets/css/style.css">
   <link rel="stylesheet" href="./assets/css/liquid-glass.css">
   <link rel="stylesheet" href="./assets/css/community.css">
   <link rel="stylesheet" href="./assets/css/glass-v2.css">
+  <link rel="stylesheet" href="./assets/css/community-classic.css">
 </head>
 <body class="community-page">
   <a class="skip-link" href="#main">Skip to content</a>
@@ -118,7 +119,7 @@
   <div class="community-mobile-tabs" role="tablist" aria-label="Community channels">
     <button class="community-mobile-tab glass-pill is-active" type="button" role="tab" aria-selected="true" aria-controls="communityStage" data-channel-link="general"><span aria-hidden="true">#</span> General</button>
     <button class="community-mobile-tab glass-pill" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="releases"><span aria-hidden="true">#</span> Releases</button>
-    <button class="community-mobile-tab glass-pill community-mobile-tab--private" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="bugs"><span aria-hidden="true">▣</span> Bug hunting</button>
+    <button class="community-mobile-tab glass-pill community-mobile-tab--private" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="bugs"><span class="community-mobile-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="5" y="10" width="14" height="10" rx="3" stroke="currentColor" stroke-width="1.8"/><path d="M8 10V8a4 4 0 0 1 8 0v2M12 14v2" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg></span> Bug hunting</button>
     <button class="community-mobile-tab glass-pill" type="button" role="tab" aria-selected="false" aria-controls="communityStage" data-channel-link="off-topic"><span aria-hidden="true">#</span> Off-topic</button>
   </div>
 

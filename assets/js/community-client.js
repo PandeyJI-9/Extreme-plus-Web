@@ -437,7 +437,15 @@
       const next = theme === "light" ? "light" : "dark";
       root.setAttribute("data-theme", next);
       root.style.colorScheme = next;
-      if (meta) meta.setAttribute("content", next === "light" ? "#f3f5fa" : "#06070b");
+      const classic = document.body.classList.contains("community-page");
+      if (meta) {
+        meta.setAttribute(
+          "content",
+          next === "light"
+            ? (classic ? "#f2eee4" : "#f3f5fa")
+            : (classic ? "#070706" : "#06070b")
+        );
+      }
       if (toggle) {
         const light = next === "light";
         toggle.setAttribute("aria-label", light ? "Switch to dark mode" : "Switch to light mode");
