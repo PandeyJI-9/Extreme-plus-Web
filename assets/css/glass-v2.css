@@ -426,10 +426,10 @@ html[data-theme="light"] .dock-lens {
 }
 
 .community-page .community-mobile-tab {
-  min-height: 42px;
-  padding: 0.45rem 0.85rem;
-  gap: 0.42rem;
-  font-size: 0.68rem;
+  min-height: 40px;
+  padding: 0.4rem 0.6rem;
+  gap: 0.36rem;
+  font-size: 0.64rem;
   -webkit-appearance: none;
   appearance: none;
 }
