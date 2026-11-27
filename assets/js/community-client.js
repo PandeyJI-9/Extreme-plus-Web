@@ -442,8 +442,8 @@
         meta.setAttribute(
           "content",
           next === "light"
-            ? (classic ? "#f2eee4" : "#f3f5fa")
-            : (classic ? "#070706" : "#06070b")
+            ? (classic ? "#f2f5f9" : "#f3f5fa")
+            : (classic ? "#0b0d11" : "#06070b")
         );
       }
       if (toggle) {

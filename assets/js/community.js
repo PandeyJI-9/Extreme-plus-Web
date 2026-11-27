@@ -100,6 +100,11 @@
     bugs: [],
     bugsLoading: false,
     activeMenuId: "",
+    menuTrigger: null,
+    jumpUnread: 0,
+    userAway: false,
+    renderedIds: new Set(),
+    membersOpener: null,
     forwardMessage: null,
     forwardTarget: "",
     reportMessage: null,
@@ -1152,6 +1157,9 @@
     } else {
       if (changed) {
         state.messages = [];
+        state.jumpUnread = 0;
+        state.userAway = false;
+        state.renderedIds = new Set();
         renderChatLoading();
       }
       loadMessages({
@@ -1172,6 +1180,7 @@
     });
     body.replaceChildren(loading);
     body.setAttribute("aria-busy", "true");
+    updateJumpLatest();
   }
 
   async function loadStats() {
@@ -1200,6 +1209,7 @@
     if (!EC.ready) return;
     try {
       const members = await EC.rpc("community_public_members", { p_limit: 40 }, { auth: false });
+      const previousRoles = JSON.stringify(state.roleByUsername);
       state.members = Array.isArray(members) ? members : [];
       state.roleByUsername = {};
       state.members.forEach((member) => {
@@ -1211,7 +1221,9 @@
         state.roleByUsername[String(state.me.username).toLowerCase()] = state.role;
       }
       renderMembers();
-      if (state.messages.length) renderMessages({ silent: true });
+      if (state.messages.length && JSON.stringify(state.roleByUsername) !== previousRoles) {
+        renderMessages({ silent: true });
+      }
     } catch (error) {
       const list = $("#membersList");
       if (list && !state.members.length) {
@@ -1266,11 +1278,23 @@
     return params.toString();
   }
 
+  function sameMessageList(current, next) {
+    if (current.length !== next.length) return false;
+    try {
+      return JSON.stringify(current) === JSON.stringify(next);
+    } catch (error) {
+      return false;
+    }
+  }
+
   async function loadMessages(options = {}) {
     if (!EC.ready || state.channel === "bugs") return;
     const channel = state.channel;
     const silent = Boolean(options.silent);
     const body = $("#chatBody");
+    const wasNearBottom = body
+      ? (body.scrollHeight - body.scrollTop - body.clientHeight) < 150
+      : true;
     const requestId = ++state.loadToken;
     state.loadingMessages = true;
     if (body) body.setAttribute("aria-busy", "true");
@@ -1285,13 +1309,25 @@
       const initialized = Boolean(state.initializedChannels[channel]);
       const ordered = rows.slice().reverse();
       const fresh = ordered.filter((message) => message && message.id && !previousIds.has(message.id));
+      const freshIds = new Set(fresh.map((message) => message.id));
+      const changed = !sameMessageList(state.messages, ordered);
 
       state.initializedChannels[channel] = true;
       state.messages = ordered;
-      renderMessages({
-        forceScroll: Boolean(options.forceScroll) || !initialized,
-        silent: silent || (initialized && previousCount > 0)
-      });
+
+      if (initialized && fresh.length && !wasNearBottom && !options.forceScroll) {
+        state.jumpUnread += fresh.length;
+      }
+
+      if (changed || !initialized || options.forceScroll) {
+        renderMessages({
+          forceScroll: Boolean(options.forceScroll) || !initialized,
+          silent: silent || (initialized && previousCount > 0),
+          freshIds: initialized ? freshIds : new Set()
+        });
+      } else {
+        updateJumpLatest();
+      }
 
       if (initialized && fresh.length && document.visibilityState !== "hidden") {
         const latest = fresh[fresh.length - 1];
@@ -1397,6 +1433,8 @@
 
   function scrollToMessage(id) {
     if (!id) return;
+    closeMessageMenus();
+    cancelChatAutoScroll();
     const article = document.querySelector(`[data-message-id="${CSS.escape(String(id))}"]`);
     if (!article) {
       EC.showToast("That message is older than the loaded history.", 4200);
@@ -1408,16 +1446,336 @@
     window.setTimeout(() => article.classList.remove("is-highlighted"), 1900);
   }
 
+  function chatDistanceFromBottom(body) {
+    return Math.max(0, body.scrollHeight - body.scrollTop - body.clientHeight);
+  }
+
+  function cancelChatAutoScroll() {
+    chatScrollStickToken += 1;
+  }
+
+  function updateJumpPosition() {
+    const panel = $("#chatPanel");
+    const body = $("#chatBody");
+    const button = $("#chatJumpLatest");
+    if (!panel || !body || !button) return;
+    const panelRect = panel.getBoundingClientRect();
+    const bodyRect = body.getBoundingClientRect();
+    const below = Math.max(0, panelRect.bottom - bodyRect.bottom);
+    button.style.setProperty("--jump-bottom", `${Math.round(below + 12)}px`);
+  }
+
+  function snapChatToBottom(body) {
+    if (!body || !body.isConnected) return;
+    state.userAway = false;
+    const previousBehavior = body.style.scrollBehavior;
+    body.style.scrollBehavior = "auto";
+    body.scrollTop = body.scrollHeight;
+    body.style.scrollBehavior = previousBehavior;
+    updateJumpLatest();
+  }
+
+  function updateJumpLatest() {
+    const body = $("#chatBody");
+    const button = $("#chatJumpLatest");
+    const count = $("#chatJumpCount");
+    if (!body || !button || !count) return;
+
+    const hasMessages = Boolean(
+      state.messages.length
+      && !body.querySelector(".garage-empty")
+      && !body.querySelector(".chat-loading")
+    );
+    const unread = Math.max(0, Number(state.jumpUnread) || 0);
+    const distance = chatDistanceFromBottom(body);
+    const awayFromLatest = state.userAway && distance > 180;
+
+    button.hidden = !hasMessages || (!awayFromLatest && unread === 0);
+    count.hidden = unread <= 0;
+    count.textContent = unread > 99 ? "99+" : String(unread);
+    button.setAttribute(
+      "aria-label",
+      unread > 0
+        ? `${unread} new message${unread === 1 ? "" : "s"}. Jump to latest.`
+        : "Jump to latest message"
+    );
+  }
+
+  function scrollToLatest() {
+    const body = $("#chatBody");
+    if (!body) return;
+    closeMessageMenus();
+    cancelChatAutoScroll();
+    state.jumpUnread = 0;
+    state.userAway = false;
+    updateJumpLatest();
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    body.scrollTo({
+      top: body.scrollHeight,
+      behavior: reduce ? "auto" : "smooth"
+    });
+  }
+
+  function initJumpLatest() {
+    const button = $("#chatJumpLatest");
+    const body = $("#chatBody");
+    if (button) {
+      button.addEventListener("click", scrollToLatest);
+    }
+    if (body) {
+      body.addEventListener("scroll", () => {
+        const distance = chatDistanceFromBottom(body);
+        state.userAway = distance > 180;
+        if (state.jumpUnread && distance < 40) {
+          state.jumpUnread = 0;
+        }
+        updateJumpLatest();
+        if (state.activeMenuId) closeMessageMenus();
+      }, { passive: true });
+      if (typeof ResizeObserver === "function") {
+        let previousHeight = body.clientHeight;
+        const observer = new ResizeObserver(() => {
+          const nextHeight = body.clientHeight;
+          const resized = nextHeight !== previousHeight;
+          previousHeight = nextHeight;
+          updateJumpPosition();
+          if (resized && !state.userAway) snapChatToBottom(body);
+        });
+        observer.observe(body);
+      }
+      updateJumpPosition();
+    }
+  }
+
+  function initMessageGestures() {
+    const body = $("#chatBody");
+    if (!body) return;
+
+    const SWIPE_THRESHOLD = 56;
+    const SWIPE_MAX = 86;
+    let gesture = null;
+    let suppressContextUntil = 0;
+
+    const clearLongPress = () => {
+      if (gesture && gesture.longPressTimer) {
+        window.clearTimeout(gesture.longPressTimer);
+        gesture.longPressTimer = 0;
+      }
+    };
+
+    const resetSwipe = (g, animate) => {
+      if (!g || !g.article || !g.article.isConnected) return;
+      const article = g.article;
+      const wrap = g.wrap;
+      article.classList.remove("is-swiping", "is-swipe-ready");
+      if (!animate) {
+        wrap.style.transform = "";
+        article.style.removeProperty("--swipe-progress");
+        return;
+      }
+      article.classList.add("is-swipe-reset");
+      window.requestAnimationFrame(() => {
+        if (article.isConnected) wrap.style.transform = "translateX(0px)";
+      });
+      window.setTimeout(() => {
+        if (!article.isConnected) return;
+        article.classList.remove("is-swipe-reset");
+        wrap.style.transform = "";
+        article.style.removeProperty("--swipe-progress");
+      }, 230);
+    };
+
+    const finishGesture = (cancelled) => {
+      if (!gesture) return;
+      const g = gesture;
+      if (g.longPressTimer) {
+        window.clearTimeout(g.longPressTimer);
+        g.longPressTimer = 0;
+      }
+      gesture = null;
+      if (!g.active) return;
+      resetSwipe(g, true);
+      if (!cancelled && g.travel >= SWIPE_THRESHOLD) {
+        const message = messageById(g.id);
+        if (message) {
+          try {
+            if (navigator.vibrate) navigator.vibrate(12);
+          } catch (error) {
+            // Haptics are optional.
+          }
+          setReplyTarget(message);
+        }
+      }
+    };
+
+    const isInteractiveTarget = (target) => Boolean(
+      target.closest("a, button, input, textarea, select, video, audio, .garage-attachment, .garage-reply-quote")
+    );
+
+    body.addEventListener("pointerdown", (event) => {
+      if (event.pointerType === "mouse" || event.isPrimary === false) return;
+      if (event.button !== undefined && event.button !== 0) return;
+      if (isInteractiveTarget(event.target)) return;
+      const article = event.target.closest(".garage-message");
+      if (!article || article.classList.contains("has-open-menu")) return;
+      const wrap = article.querySelector(".garage-bubble-wrap");
+      if (!wrap) return;
+
+      if (gesture) finishGesture(true);
+      clearLongPress();
+
+      const g = {
+        article,
+        wrap,
+        id: article.getAttribute("data-message-id"),
+        own: article.classList.contains("is-own"),
+        startX: event.clientX,
+        startY: event.clientY,
+        pointerId: event.pointerId,
+        active: false,
+        travel: 0,
+        moved: false,
+        longPressTimer: 0
+      };
+      gesture = g;
+
+      g.longPressTimer = window.setTimeout(() => {
+        if (!gesture || gesture !== g || gesture.active || gesture.moved) return;
+        g.longPressTimer = 0;
+        suppressContextUntil = Date.now() + 900;
+        try {
+          if (navigator.vibrate) navigator.vibrate(10);
+        } catch (error) {
+          // Haptics are optional.
+        }
+        openMessageMenuAt(g.id, g.startX, g.startY);
+      }, 480);
+    }, { passive: true });
+
+    body.addEventListener("pointermove", (event) => {
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      const g = gesture;
+      const dx = event.clientX - g.startX;
+      const dy = event.clientY - g.startY;
+
+      if (!g.active) {
+        if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+        g.moved = true;
+        clearLongPress();
+        if (Math.abs(dy) >= Math.abs(dx)) return;
+
+        const direction = g.own ? -1 : 1;
+        if ((dx * direction) < 8) return;
+
+        g.active = true;
+        g.article.classList.add("is-swiping");
+        try {
+          g.article.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // Pointer capture is an enhancement.
+        }
+      }
+
+      if (event.cancelable) event.preventDefault();
+      const direction = g.own ? -1 : 1;
+      const raw = (event.clientX - g.startX) * direction;
+      const travel = Math.min(Math.max(0, raw), SWIPE_MAX);
+      g.travel = travel;
+      g.wrap.style.transform = `translateX(${Math.round(direction * travel)}px)`;
+      g.article.style.setProperty("--swipe-progress", Math.min(1, travel / SWIPE_THRESHOLD).toFixed(3));
+      g.article.classList.toggle("is-swipe-ready", travel >= SWIPE_THRESHOLD);
+    }, { passive: false });
+
+    body.addEventListener("pointerup", (event) => {
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      if (gesture.active && event.cancelable) event.preventDefault();
+      finishGesture(false);
+    }, { passive: false });
+
+    body.addEventListener("pointercancel", (event) => {
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      finishGesture(true);
+    }, { passive: true });
+
+    body.addEventListener("contextmenu", (event) => {
+      const article = event.target.closest(".garage-message");
+      if (!article) return;
+      event.preventDefault();
+      if (event.pointerType !== "mouse" && Date.now() < suppressContextUntil) return;
+      openMessageMenuAt(article.getAttribute("data-message-id"), event.clientX, event.clientY);
+    });
+
+    body.addEventListener("dblclick", (event) => {
+      if (!window.matchMedia("(hover: hover)").matches) return;
+      if (isInteractiveTarget(event.target)) return;
+      const article = event.target.closest(".garage-message");
+      if (!article) return;
+      const message = messageById(article.getAttribute("data-message-id"));
+      if (!message) return;
+      event.preventDefault();
+      setReplyTarget(message);
+    });
+
+    body.addEventListener("keydown", (event) => {
+      const article = event.target.closest(".garage-message");
+      if (!article || event.target !== article) return;
+      if (event.altKey || event.ctrlKey || event.metaKey) return;
+      const message = messageById(article.getAttribute("data-message-id"));
+      if (!message) return;
+
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        toggleMessageMenu(message.id);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        setReplyTarget(message);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "c") {
+        event.preventDefault();
+        copyMessage(message);
+        return;
+      }
+
+      if (event.key.toLowerCase() === "f") {
+        event.preventDefault();
+        openForwardDialog(message);
+        return;
+      }
+
+      if ((event.key === "Delete" || event.key === "Backspace") && message.user_id && state.user && message.user_id === state.user.id) {
+        event.preventDefault();
+        deleteMessage(message);
+      }
+    });
+
+    window.addEventListener("resize", () => {
+      if (state.activeMenuId) closeMessageMenus();
+    }, { passive: true });
+  }
+
   function updateReplyBar() {
     const bar = $("#composerReply");
     if (!bar) return;
     const message = state.replyTo;
     bar.hidden = !message;
-    if (!message) return;
-    const author = $("#composerReplyAuthor");
+    if (!message) {
+      bar.removeAttribute("title");
+      bar.removeAttribute("aria-label");
+      return;
+    }
+    const author = message.author_name || message.author_username || "Rider";
+    const excerpt = truncate(message.body || message.attachment_name || "Attachment", 140);
+    const authorNode = $("#composerReplyAuthor");
     const text = $("#composerReplyText");
-    if (author) author.textContent = message.author_name || message.author_username || "Rider";
-    if (text) text.textContent = truncate(message.body || message.attachment_name || "Attachment", 140);
+    if (authorNode) authorNode.textContent = author;
+    if (text) text.textContent = excerpt;
+    bar.title = `Click to jump to ${author}'s message`;
+    bar.setAttribute("aria-label", `Replying to ${author}: ${excerpt}. Click to jump to the original message.`);
   }
 
   function setReplyTarget(message) {
@@ -1425,6 +1783,7 @@
     state.replyTo = message;
     updateReplyBar();
     updateComposerLabels();
+    announce(`Replying to ${message.author_name || message.author_username || "Rider"}.`);
     const input = $("#chatInput");
     if (input) input.focus({ preventScroll: true });
   }
@@ -1439,17 +1798,74 @@
     updateComposerLabels();
   }
 
+  let chatScrollStickToken = 0;
+
+  function scrollChatToBottom(body) {
+    if (!body) return;
+    const token = ++chatScrollStickToken;
+    let active = true;
+    const cancel = () => {
+      if (token !== chatScrollStickToken) return;
+      active = false;
+    };
+    const observeUserScroll = () => {
+      if (!active || token !== chatScrollStickToken) return;
+      if (chatDistanceFromBottom(body) > 80) {
+        active = false;
+        body.removeEventListener("scroll", observeUserScroll);
+      }
+    };
+    const apply = () => {
+      if (!active || token !== chatScrollStickToken || !body.isConnected) return;
+      snapChatToBottom(body);
+    };
+    const cancelEvents = ["wheel", "touchstart", "pointerdown", "keydown"];
+    cancelEvents.forEach((name) => body.addEventListener(name, cancel, { passive: true, once: true }));
+    body.addEventListener("scroll", observeUserScroll, { passive: true });
+
+    apply();
+    window.requestAnimationFrame(() => {
+      apply();
+      window.requestAnimationFrame(apply);
+    });
+    window.setTimeout(apply, 90);
+    window.setTimeout(apply, 260);
+    if (document.fonts && document.fonts.ready && typeof document.fonts.ready.then === "function") {
+      document.fonts.ready.then(apply).catch(() => {});
+    }
+    body.querySelectorAll("img, video").forEach((media) => {
+      const settle = () => {
+        if (active) apply();
+      };
+      if (media.tagName === "VIDEO") {
+        media.addEventListener("loadedmetadata", settle, { once: true });
+      }
+      if (!media.complete) {
+        media.addEventListener("load", settle, { once: true });
+      }
+    });
+    window.setTimeout(() => {
+      if (token === chatScrollStickToken) active = false;
+      cancelEvents.forEach((name) => body.removeEventListener(name, cancel));
+      body.removeEventListener("scroll", observeUserScroll);
+    }, 5000);
+  }
+
   function renderMessages(options = {}) {
     const body = $("#chatBody");
     if (!body) return;
     const forceScroll = Boolean(options.forceScroll);
-    const silent = Boolean(options.silent);
+    const freshIds = options.freshIds instanceof Set ? options.freshIds : new Set();
     const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 150;
     const previousTop = body.scrollTop;
 
     body.replaceChildren();
+    state.renderedIds = new Set();
+
     if (!state.messages.length) {
+      state.jumpUnread = 0;
       renderChatEmpty(body);
+      updateJumpLatest();
       return;
     }
 
@@ -1479,24 +1895,36 @@
         && date.getTime() - previousDate.getTime() < 5 * 60 * 1000
       );
 
-      fragment.appendChild(createMessage(message, compact, silent));
+      fragment.appendChild(createMessage(message, compact, {
+        fresh: freshIds.has(message.id)
+      }));
       previous = message;
       previousDay = key || previousDay;
     });
 
     body.appendChild(fragment);
+    state.renderedIds = new Set(state.messages.map((message) => message.id));
 
     if (forceScroll || nearBottom) {
-      body.scrollTop = body.scrollHeight;
+      state.jumpUnread = 0;
+      state.userAway = false;
+      scrollChatToBottom(body);
     } else {
       body.scrollTop = previousTop;
+      updateJumpLatest();
     }
   }
 
-  function createMessage(message, compact, silent) {
+  function createMessage(message, compact, options = {}) {
     const own = Boolean(state.session && state.user && message.user_id === state.user.id);
-    const article = create("article", "garage-message" + (compact ? " is-compact" : "") + (own ? " is-own" : "") + (silent ? " is-silent" : ""));
+    const fresh = Boolean(options.fresh);
+    const article = create("article", "garage-message" + (compact ? " is-compact" : "") + (own ? " is-own" : "") + (fresh ? " is-new" : ""));
     article.setAttribute("data-message-id", message.id);
+    article.setAttribute("role", "article");
+    article.setAttribute("tabindex", "0");
+    article.setAttribute("aria-label", `${message.author_name || message.author_username || "Rider"} at ${formatTime(message.created_at)}: ${truncate(message.body || message.attachment_name || "Attachment", 180)}`);
+    article.setAttribute("aria-haspopup", "menu");
+    article.setAttribute("aria-keyshortcuts", "Enter");
 
     const avatar = message.author_username
       ? document.createElement("a")
@@ -1560,33 +1988,34 @@
     if (message.is_release_announcement) foot.appendChild(create("span", "garage-release-tag", "stable"));
     bubble.appendChild(foot);
     wrap.appendChild(bubble);
-    article.appendChild(wrap);
 
     const actions = create("div", "garage-message-actions");
+    actions.appendChild(quickAction("reply", "Reply", MENU_ICONS.reply));
+    actions.appendChild(quickAction("copy", "Copy text", MENU_ICONS.copy));
     const trigger = document.createElement("button");
     trigger.type = "button";
     trigger.className = "garage-action-btn";
     trigger.setAttribute("data-message-menu", message.id);
-    trigger.setAttribute("aria-label", "Message actions");
+    trigger.setAttribute("aria-label", "More message actions");
     trigger.setAttribute("aria-haspopup", "menu");
     trigger.setAttribute("aria-expanded", "false");
     trigger.innerHTML = '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="5" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="19" cy="12" r="1.5" fill="currentColor"/></svg>';
     actions.appendChild(trigger);
-
-    const menu = create("div", "garage-menu");
-    menu.setAttribute("role", "menu");
-    menu.appendChild(menuButton("reply", "Reply", MENU_ICONS.reply));
-    if (isStaff()) {
-      menu.appendChild(menuButton("pin", isPinnedMessage(message) ? "Unpin" : "Pin", MENU_ICONS.pin));
-    }
-    menu.appendChild(menuButton("forward", "Forward", MENU_ICONS.forward));
-    menu.appendChild(menuButton("copy", "Copy text", MENU_ICONS.copy));
-    if (!own) menu.appendChild(menuButton("report", "Report", MENU_ICONS.report));
-    if (own) menu.appendChild(menuButton("delete", "Delete", MENU_ICONS.delete, true));
-    actions.appendChild(menu);
-    article.appendChild(actions);
+    wrap.appendChild(actions);
+    article.appendChild(wrap);
 
     return article;
+  }
+
+  function quickAction(action, label, icon) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "garage-action-btn garage-quick-action";
+    button.setAttribute("data-message-action", action);
+    button.setAttribute("aria-label", label);
+    button.title = label;
+    button.innerHTML = icon;
+    return button;
   }
 
   function menuButton(action, label, icon, danger) {
@@ -1643,27 +2072,157 @@
     button.textContent = "Try again";
     empty.appendChild(button);
     body.replaceChildren(empty);
+    updateJumpLatest();
   }
 
   function closeMessageMenus(exceptId) {
+    const portal = $("#messageMenuPortal");
+    if (portal && (!exceptId || portal.getAttribute("data-message-id") !== exceptId)) {
+      portal.remove();
+    }
     $$(".garage-message.has-open-menu").forEach((message) => {
       if (exceptId && message.getAttribute("data-message-id") === exceptId) return;
       message.classList.remove("has-open-menu");
       const trigger = $("[data-message-menu]", message);
       if (trigger) trigger.setAttribute("aria-expanded", "false");
     });
-    if (!exceptId) state.activeMenuId = "";
+    if (!exceptId) {
+      state.activeMenuId = "";
+      state.menuTrigger = null;
+    }
+  }
+
+  function buildMessageMenu(message) {
+    const own = Boolean(state.session && state.user && message.user_id === state.user.id);
+    const menu = create("div", "garage-menu");
+    menu.id = "messageMenuPortal";
+    menu.setAttribute("data-message-id", message.id);
+    menu.setAttribute("role", "menu");
+    menu.setAttribute("aria-label", "Message actions");
+
+    menu.appendChild(menuButton("reply", "Reply", MENU_ICONS.reply));
+    if (isStaff()) {
+      menu.appendChild(menuButton("pin", isPinnedMessage(message) ? "Unpin" : "Pin", MENU_ICONS.pin));
+    }
+    menu.appendChild(menuButton("forward", "Forward", MENU_ICONS.forward));
+    menu.appendChild(menuButton("copy", "Copy text", MENU_ICONS.copy));
+    menu.appendChild(create("span", "garage-menu-separator"));
+    if (!own) menu.appendChild(menuButton("report", "Report", MENU_ICONS.report));
+    if (own) menu.appendChild(menuButton("delete", "Delete", MENU_ICONS.delete, true));
+
+    menu.addEventListener("keydown", (event) => {
+      const items = $$("button:not([disabled])", menu);
+      if (!items.length) return;
+      const current = items.indexOf(document.activeElement);
+
+      if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+        event.preventDefault();
+        const direction = event.key === "ArrowDown" ? 1 : -1;
+        const next = current < 0 ? 0 : (current + direction + items.length) % items.length;
+        items[next].focus({ preventScroll: true });
+        return;
+      }
+
+      if (event.key === "Home" || event.key === "End") {
+        event.preventDefault();
+        items[event.key === "Home" ? 0 : items.length - 1].focus({ preventScroll: true });
+        return;
+      }
+
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        const trigger = state.menuTrigger;
+        closeMessageMenus();
+        if (trigger && trigger.isConnected) {
+          try {
+            trigger.focus({ preventScroll: true });
+          } catch (error) {
+            trigger.focus();
+          }
+        }
+      }
+    });
+
+    return menu;
+  }
+
+  function placeMessageMenu(menu, position) {
+    const pad = 8;
+    const rect = menu.getBoundingClientRect();
+    const anchor = position && position.anchor;
+    let left = position && Number.isFinite(position.x) ? position.x : 0;
+    let top = position && Number.isFinite(position.y) ? position.y : 0;
+
+    if (anchor) {
+      left = anchor.right - rect.width;
+      top = anchor.bottom + 6;
+      if (top + rect.height > window.innerHeight - pad) {
+        top = anchor.top - rect.height - 6;
+      }
+    } else if (top + rect.height > window.innerHeight - pad) {
+      top -= rect.height;
+    }
+
+    left = Math.min(Math.max(pad, left), Math.max(pad, window.innerWidth - rect.width - pad));
+    top = Math.min(Math.max(pad, top), Math.max(pad, window.innerHeight - rect.height - pad));
+    menu.style.left = `${Math.round(left)}px`;
+    menu.style.top = `${Math.round(top)}px`;
+  }
+
+  function openMessageMenu(message, position) {
+    const article = document.querySelector(`[data-message-id="${CSS.escape(String(message.id))}"]`);
+    const trigger = article ? $("[data-message-menu]", article) : null;
+    closeMessageMenus();
+
+    const menu = buildMessageMenu(message);
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+    document.body.appendChild(menu);
+    placeMessageMenu(menu, position);
+
+    if (article) article.classList.add("has-open-menu");
+    if (trigger) {
+      trigger.setAttribute("aria-expanded", "true");
+      state.menuTrigger = trigger;
+    } else {
+      state.menuTrigger = null;
+    }
+    state.activeMenuId = message.id;
+    updateJumpLatest();
+
+    window.requestAnimationFrame(() => {
+      if (!menu.isConnected) return;
+      menu.classList.add("is-open");
+      const first = $("button:not([disabled])", menu);
+      if (first) {
+        try {
+          first.focus({ preventScroll: true });
+        } catch (error) {
+          first.focus();
+        }
+      }
+    });
   }
 
   function toggleMessageMenu(id) {
-    const message = $(`[data-message-id="${CSS.escape(id)}"]`);
+    const message = messageById(id);
     if (!message) return;
-    const wasOpen = message.classList.contains("has-open-menu");
-    closeMessageMenus(id);
-    message.classList.toggle("has-open-menu", !wasOpen);
-    const trigger = $("[data-message-menu]", message);
-    if (trigger) trigger.setAttribute("aria-expanded", String(!wasOpen));
-    state.activeMenuId = wasOpen ? "" : id;
+    if (state.activeMenuId === id && $("#messageMenuPortal")) {
+      closeMessageMenus();
+      return;
+    }
+    const article = document.querySelector(`[data-message-id="${CSS.escape(String(id))}"]`);
+    const trigger = article ? $("[data-message-menu]", article) : null;
+    openMessageMenu(message, trigger
+      ? { anchor: trigger.getBoundingClientRect() }
+      : { x: 12, y: 72 });
+  }
+
+  function openMessageMenuAt(id, x, y) {
+    const message = messageById(id);
+    if (!message) return;
+    openMessageMenu(message, { x, y });
   }
 
   function messageById(id) {
@@ -2160,7 +2719,7 @@
       clearPendingAttachment();
       if (Array.isArray(rows) && rows[0]) {
         state.messages.push(rows[0]);
-        renderMessages({ forceScroll: true });
+        renderMessages({ forceScroll: true, freshIds: new Set([rows[0].id]) });
       } else {
         await loadMessages({ silent: true, forceScroll: true });
       }
@@ -2214,9 +2773,13 @@
     if (remaining > 0) {
       button.disabled = true;
       button.querySelector("span").textContent = `Wait ${remaining}s`;
+      button.setAttribute("aria-label", `Wait ${remaining} seconds before sending`);
+      button.title = `Slow mode: wait ${remaining}s`;
     } else if (!state.sending) {
       button.disabled = false;
       button.querySelector("span").textContent = "Send";
+      button.setAttribute("aria-label", "Send message");
+      button.title = "Send message (Enter)";
     }
   }
 
@@ -2249,6 +2812,13 @@
       replyCancel.addEventListener("click", () => {
         clearReplyTarget();
         input.focus({ preventScroll: true });
+      });
+    }
+    const replyBar = $("#composerReply");
+    if (replyBar) {
+      replyBar.addEventListener("click", (event) => {
+        if (event.target.closest("button")) return;
+        if (state.replyTo) scrollToMessage(state.replyTo.id);
       });
     }
 
@@ -2783,34 +3353,70 @@
     }
   }
 
+  function membersOverlay() {
+    return window.matchMedia("(max-width: 1240px)").matches;
+  }
+
   function openMembers() {
     const panel = $("#membersPanel");
     const scrim = $("#membersScrim");
     if (!panel) return;
+    closeMessageMenus();
+    const overlay = membersOverlay();
+    if (!panel.classList.contains("is-open")) {
+      state.membersOpener = document.activeElement;
+    }
     panel.classList.add("is-open");
-    if (scrim) scrim.hidden = false;
+    if (overlay) {
+      panel.setAttribute("role", "dialog");
+      panel.setAttribute("aria-modal", "true");
+    } else {
+      panel.removeAttribute("role");
+      panel.removeAttribute("aria-modal");
+    }
+    if (scrim) scrim.hidden = !overlay;
     $$("[data-members-toggle], #communityMembersToggle").forEach((button) => {
       button.setAttribute("aria-expanded", "true");
     });
     const close = $("[data-members-close]");
     if (close) {
-      try {
-        close.focus({ preventScroll: true });
-      } catch (error) {
-        close.focus();
-      }
+      window.requestAnimationFrame(() => {
+        try {
+          close.focus({ preventScroll: true });
+        } catch (error) {
+          close.focus();
+        }
+      });
     }
   }
 
-  function closeMembers() {
+  function closeMembers(options = {}) {
     const panel = $("#membersPanel");
     const scrim = $("#membersScrim");
     if (!panel) return;
+    const wasOpen = panel.classList.contains("is-open");
+    const overlay = membersOverlay();
     panel.classList.remove("is-open");
+    panel.removeAttribute("role");
+    panel.removeAttribute("aria-modal");
     if (scrim) scrim.hidden = true;
     $$("[data-members-toggle], #communityMembersToggle").forEach((button) => {
       button.setAttribute("aria-expanded", "false");
     });
+
+    if (wasOpen && overlay && options.restoreFocus !== false) {
+      const opener = state.membersOpener;
+      if (opener && opener.isConnected && !opener.hidden) {
+        window.setTimeout(() => {
+          try {
+            opener.focus({ preventScroll: true });
+          } catch (error) {
+            opener.focus();
+          }
+        }, 40);
+      }
+    }
+    state.membersOpener = null;
   }
 
   function openAuthDialog() {
@@ -2872,10 +3478,35 @@
       button.addEventListener("click", openMembers);
     });
     $$("[data-members-close]").forEach((button) => {
-      button.addEventListener("click", closeMembers);
+      button.addEventListener("click", () => closeMembers());
     });
     const scrim = $("#membersScrim");
-    if (scrim) scrim.addEventListener("click", closeMembers);
+    if (scrim) scrim.addEventListener("click", () => closeMembers());
+
+    const overlayQuery = window.matchMedia("(max-width: 1240px)");
+    if (overlayQuery.addEventListener) {
+      overlayQuery.addEventListener("change", (event) => {
+        if (!event.matches) closeMembers({ restoreFocus: false });
+      });
+    }
+
+    document.addEventListener("keydown", (event) => {
+      const panel = $("#membersPanel");
+      if (!panel || event.key !== "Tab" || !overlayQuery.matches || !panel.classList.contains("is-open")) return;
+      const focusable = $$("a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex='-1'])", panel)
+        .filter((node) => node.getClientRects().length > 0 && !node.hidden);
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (event.shiftKey && (active === first || !panel.contains(active))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+        event.preventDefault();
+        first.focus();
+      }
+    });
   }
 
   function initDelegatedEvents() {
@@ -2973,10 +3604,11 @@
       if (event.key === "Escape") {
         const hadDialog = $$("dialog[open]").length > 0;
         const hadMenu = Boolean(state.activeMenuId);
+        const hadMembers = Boolean($("#membersPanel") && $("#membersPanel").classList.contains("is-open"));
         closeMessageMenus();
         closeMembers();
         $$("dialog[open]").forEach((dialog) => closeDialog(dialog));
-        if (!hadDialog && !hadMenu && state.replyTo) clearReplyTarget();
+        if (!hadDialog && !hadMenu && !hadMembers && state.replyTo) clearReplyTarget();
       }
     });
 
@@ -3106,6 +3738,8 @@
     initComposer();
     initDialogs();
     initMembers();
+    initJumpLatest();
+    initMessageGestures();
     initDelegatedEvents();
     applyChannelUI(state.channel);
     updateAuthUI();
